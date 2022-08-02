@@ -30,7 +30,7 @@ impl std::fmt::Display for MipsRInstr {
             MipsFunction::Sll | MipsFunction::Srl | MipsFunction::Sra =>
                 write!(f, "{} ${}, ${}, {}", self.function, self.d_reg, self.t_reg, self.shamt),
             MipsFunction::Jr | MipsFunction::Jalr => write!(f, "{} ${}", self.function, self.s_reg),
-            _ => write!(f, "{} ${}, ${}, ${}", self.function, self.d_reg, self.t_reg, self.s_reg),
+            _ => write!(f, "{} ${}, ${}, ${}", self.function, self.d_reg, self.s_reg, self.t_reg),
         }
     }
 }
@@ -78,7 +78,7 @@ fn mips_decode_rtype(instr_raw: u32) -> MipsInstr {
     let t_reg = ((instr_raw >> 16) & 0x1f) as u8;
     let d_reg = ((instr_raw >> 11) & 0x1f) as u8;
     let shamt = ((instr_raw >> 6) & 0x1f) as u8;
-    let func = num::FromPrimitive::from_u32(instr_raw & 0x1f);
+    let func = num::FromPrimitive::from_u32(instr_raw & 0x3f);
 
     if let Some(function) = func {
         return MipsInstr::RType(MipsRInstr{
