@@ -1,5 +1,5 @@
 LLVM_DIR=../../llvm-project/build/bin
-CLANG_TARGET=mips-none-eabi
+CLANG_TARGET=mipsel-none-eabi
 CC = $(LLVM_DIR)/clang -target $(CLANG_TARGET) -S
 AS = $(LLVM_DIR)/clang -target $(CLANG_TARGET) -c
 LD = ld.lld
