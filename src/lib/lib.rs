@@ -3,3 +3,4 @@ extern crate num;
 extern crate num_derive;
 
 pub mod cpu;
+pub mod mem;
