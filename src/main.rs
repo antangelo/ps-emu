@@ -1,4 +1,4 @@
-use object::{Object, ObjectSection, Endian};
+use object::{Object, ObjectSection};
 
 fn mips_disassemble_bus(bus: &mut libpsx::cpu::bus::Bus, addr: u32, size: usize) {
     for i in 0..size {

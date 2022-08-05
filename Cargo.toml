@@ -18,4 +18,3 @@ num = "0.4"
 num-derive = "0.3"
 num-traits = "0.2"
 object = "0.29"
-

@@ -65,9 +65,11 @@ fn mips_decode_itype(opcode: MipsOpcode, instr_raw: u32) -> MipsInstr {
 }
 
 fn mips_decode_jtype(opcode: MipsOpcode, instr_raw: u32) -> MipsInstr {
+    let target = instr_raw & 0x03ffffff;
+
     MipsInstr::JType(MipsJInstr{
         opcode,
-        target: instr_raw & 0x03ffffff,
+        target,
     })
 }
 
@@ -110,7 +112,7 @@ impl std::fmt::Display for MipsIInstr {
                 | MipsOpcode::Lbu | MipsOpcode::Lhu | MipsOpcode::Lwr | MipsOpcode::Sb | MipsOpcode::Sh
                 | MipsOpcode::Sw | MipsOpcode::Swl | MipsOpcode::Swr
                 => write!(f, "{} ${}, {}(${})", self.opcode, self.t_reg, self.immediate, self.s_reg),
-            _ => write!(f, "{} ${}, ${}, {}", self.opcode, self.s_reg, self.t_reg, self.immediate as i16)
+            _ => write!(f, "{} ${}, ${}, {}", self.opcode, self.t_reg, self.s_reg, self.immediate as i16)
         }
 
     }
@@ -118,7 +120,7 @@ impl std::fmt::Display for MipsIInstr {
 
 impl std::fmt::Display for MipsJInstr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.opcode, self.target)
+        write!(f, "{} {:#x}", self.opcode, self.target << 2)
     }
 }
 
