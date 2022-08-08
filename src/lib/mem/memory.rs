@@ -1,5 +1,5 @@
-use object::Endian;
 use crate::cpu::{bus, bus::MemAccessError, bus::MemAccessErrorType};
+use object::Endian;
 
 pub struct RAM {
     endianness: object::Endianness,
@@ -8,7 +8,7 @@ pub struct RAM {
 
 impl RAM {
     fn read16(&self, addr: u32) -> Result<u16, MemAccessError> {
-        let range_it = self.ram.range(addr..addr+2);
+        let range_it = self.ram.range(addr..addr + 2);
         let mut arr: Vec<u8> = vec![0; 2];
         range_it.for_each(|x| arr[(x.0 - addr) as usize] = *(x.1));
 
@@ -16,7 +16,7 @@ impl RAM {
     }
 
     fn read32(&self, addr: u32) -> Result<u32, MemAccessError> {
-        let range_it = self.ram.range(addr..addr+4);
+        let range_it = self.ram.range(addr..addr + 4);
         let mut arr: Vec<u8> = vec![0; 4];
         range_it.for_each(|x| arr[(x.0 - addr) as usize] = *(x.1));
 
@@ -35,7 +35,10 @@ impl Default for RAM {
             object::Endianness::Big
         };
 
-        RAM{endianness, ram: std::collections::BTreeMap::default()}
+        RAM {
+            endianness,
+            ram: std::collections::BTreeMap::default(),
+        }
     }
 }
 
@@ -45,7 +48,10 @@ impl bus::BusDevice for RAM {
             8 => Ok(self.ram.get(&addr).map(|x| *x as u32).unwrap_or(0)),
             16 => self.read16(addr).map(|x| x as u32),
             32 => self.read32(addr),
-            _ => Err(MemAccessError{addr, err: MemAccessErrorType::BadSize}),
+            _ => Err(MemAccessError {
+                addr,
+                err: MemAccessErrorType::BadSize,
+            }),
         }
     }
 
@@ -54,11 +60,16 @@ impl bus::BusDevice for RAM {
             8 => vec![value as u8],
             16 => self.endianness.write_u16_bytes(value as u16).to_vec(),
             32 => self.endianness.write_u32_bytes(value).to_vec(),
-            _ => { return Err(MemAccessError{addr, err: MemAccessErrorType::BadSize}); }
+            _ => {
+                return Err(MemAccessError {
+                    addr,
+                    err: MemAccessErrorType::BadSize,
+                });
+            }
         };
 
         for i in 0..vals.len() {
-            self.ram.insert(addr + i as u32, vals[i]); 
+            self.ram.insert(addr + i as u32, vals[i]);
         }
 
         Ok(())
@@ -81,7 +92,7 @@ mod test {
 
         let value = 1024;
         match bus.write(0x0, 32, value) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => panic!("Memory write error {:?}", e),
         }
 

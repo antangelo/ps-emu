@@ -1,4 +1,4 @@
-use super::opcode::{MipsOpcode, MipsFunction, MipsBranchSpecial};
+use super::opcode::{MipsBranchSpecial, MipsFunction, MipsOpcode};
 
 #[derive(Debug)]
 pub struct MipsRInstr {
@@ -39,7 +39,7 @@ fn mips_decode_rtype(instr_raw: u32) -> MipsInstr {
     let func = num::FromPrimitive::from_u32(instr_raw & 0x3f);
 
     if let Some(function) = func {
-        return MipsInstr::RType(MipsRInstr{
+        return MipsInstr::RType(MipsRInstr {
             s_reg,
             t_reg,
             d_reg,
@@ -56,7 +56,7 @@ fn mips_decode_itype(opcode: MipsOpcode, instr_raw: u32) -> MipsInstr {
     let t_reg = ((instr_raw >> 16) & 0x1f) as u8;
     let immediate = (instr_raw & 0xffff) as u16;
 
-    MipsInstr::IType(MipsIInstr{
+    MipsInstr::IType(MipsIInstr {
         opcode,
         s_reg,
         t_reg,
@@ -67,10 +67,7 @@ fn mips_decode_itype(opcode: MipsOpcode, instr_raw: u32) -> MipsInstr {
 fn mips_decode_jtype(opcode: MipsOpcode, instr_raw: u32) -> MipsInstr {
     let target = instr_raw & 0x03ffffff;
 
-    MipsInstr::JType(MipsJInstr{
-        opcode,
-        target,
-    })
+    MipsInstr::JType(MipsJInstr { opcode, target })
 }
 
 fn mips_decode_opcode(opcode: MipsOpcode, instr_raw: u32) -> MipsInstr {
@@ -93,10 +90,17 @@ pub fn mips_decode(instr_raw: u32) -> MipsInstr {
 impl std::fmt::Display for MipsRInstr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.function {
-            MipsFunction::Sll | MipsFunction::Srl | MipsFunction::Sra =>
-                write!(f, "{} ${}, ${}, {}", self.function, self.d_reg, self.t_reg, self.shamt),
+            MipsFunction::Sll | MipsFunction::Srl | MipsFunction::Sra => write!(
+                f,
+                "{} ${}, ${}, {}",
+                self.function, self.d_reg, self.t_reg, self.shamt
+            ),
             MipsFunction::Jr | MipsFunction::Jalr => write!(f, "{} ${}", self.function, self.s_reg),
-            _ => write!(f, "{} ${}, ${}, ${}", self.function, self.d_reg, self.s_reg, self.t_reg),
+            _ => write!(
+                f,
+                "{} ${}, ${}, ${}",
+                self.function, self.d_reg, self.s_reg, self.t_reg
+            ),
         }
     }
 }
@@ -105,16 +109,36 @@ impl std::fmt::Display for MipsIInstr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.opcode {
             MipsOpcode::RegisterImm => {
-                let special_op = num::FromPrimitive::from_u8(self.t_reg).unwrap_or(MipsBranchSpecial::Invalid);
-                write!(f, "{} ${}, {}", special_op, self.s_reg, self.immediate as i16)
-            },
-            MipsOpcode::Lb | MipsOpcode::Lh | MipsOpcode::Lw | MipsOpcode::Lwl
-                | MipsOpcode::Lbu | MipsOpcode::Lhu | MipsOpcode::Lwr | MipsOpcode::Sb | MipsOpcode::Sh
-                | MipsOpcode::Sw | MipsOpcode::Swl | MipsOpcode::Swr
-                => write!(f, "{} ${}, {}(${})", self.opcode, self.t_reg, self.immediate, self.s_reg),
-            _ => write!(f, "{} ${}, ${}, {}", self.opcode, self.t_reg, self.s_reg, self.immediate as i16)
+                let special_op =
+                    num::FromPrimitive::from_u8(self.t_reg).unwrap_or(MipsBranchSpecial::Invalid);
+                write!(
+                    f,
+                    "{} ${}, {}",
+                    special_op, self.s_reg, self.immediate as i16
+                )
+            }
+            MipsOpcode::Lb
+            | MipsOpcode::Lh
+            | MipsOpcode::Lw
+            | MipsOpcode::Lwl
+            | MipsOpcode::Lbu
+            | MipsOpcode::Lhu
+            | MipsOpcode::Lwr
+            | MipsOpcode::Sb
+            | MipsOpcode::Sh
+            | MipsOpcode::Sw
+            | MipsOpcode::Swl
+            | MipsOpcode::Swr => write!(
+                f,
+                "{} ${}, {}(${})",
+                self.opcode, self.t_reg, self.immediate, self.s_reg
+            ),
+            _ => write!(
+                f,
+                "{} ${}, ${}, {}",
+                self.opcode, self.t_reg, self.s_reg, self.immediate as i16
+            ),
         }
-
     }
 }
 

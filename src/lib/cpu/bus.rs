@@ -32,7 +32,10 @@ pub struct MemAccessError {
 
 impl Default for Bus {
     fn default() -> Self {
-        Bus{endianness: object::Endianness::Little, bus: std::collections::BTreeMap::default()}
+        Bus {
+            endianness: object::Endianness::Little,
+            bus: std::collections::BTreeMap::default(),
+        }
     }
 }
 
@@ -40,24 +43,33 @@ impl Bus {
     pub fn map(&mut self, addr: u32, size: u32, device: Box<dyn BusDevice>) {
         if let Some((a, ent)) = self.bus.range(..=addr).next_back() {
             if addr >= *a && addr < *a + ent.size {
-                panic!("Overlapping bus entry at addrs ({} to {}) and ({} to {})", addr, size, *a, ent.size);
+                panic!(
+                    "Overlapping bus entry at addrs ({} to {}) and ({} to {})",
+                    addr, size, *a, ent.size
+                );
             }
         }
 
-       if let Some(_) = self.bus.insert(addr, BusEntry{addr, size, device}) {
-           panic!("Bus insert overwrote entry");
-       }
+        if let Some(_) = self.bus.insert(addr, BusEntry { addr, size, device }) {
+            panic!("Bus insert overwrote entry");
+        }
     }
 
     fn bus_lookup(&mut self, addr: u32) -> Result<&mut BusEntry, MemAccessError> {
         if let Some((a, ent)) = self.bus.range_mut(..=addr).next_back() {
             if addr < *a || addr >= *a + ent.size {
-                Err(MemAccessError{addr, err: MemAccessErrorType::NotInRange(*a, ent.size)})
+                Err(MemAccessError {
+                    addr,
+                    err: MemAccessErrorType::NotInRange(*a, ent.size),
+                })
             } else {
                 Ok(ent)
             }
         } else {
-            Err(MemAccessError{addr, err: MemAccessErrorType::NoEntry})
+            Err(MemAccessError {
+                addr,
+                err: MemAccessErrorType::NoEntry,
+            })
         }
     }
 
@@ -68,7 +80,10 @@ impl Bus {
             8 => val,
             16 => val.map(|x| self.endianness.read_u16(x as u16) as u32),
             32 => val.map(|x| self.endianness.read_u32(x)),
-            _ => Err(MemAccessError{addr, err: MemAccessErrorType::BadSize}),
+            _ => Err(MemAccessError {
+                addr,
+                err: MemAccessErrorType::BadSize,
+            }),
         }
     }
 
@@ -78,8 +93,11 @@ impl Bus {
             16 => self.endianness.read_u16(value as u16) as u32,
             32 => self.endianness.read_u32(value),
             _ => {
-                return Err(MemAccessError{addr, err: MemAccessErrorType::BadSize});
-            },
+                return Err(MemAccessError {
+                    addr,
+                    err: MemAccessErrorType::BadSize,
+                });
+            }
         };
 
         let ent = self.bus_lookup(addr)?;
@@ -102,7 +120,12 @@ mod test {
             Ok(self.value)
         }
 
-        fn write(&mut self, _addr: u32, _size: u32, value: u32) -> Result<(), super::MemAccessError> {
+        fn write(
+            &mut self,
+            _addr: u32,
+            _size: u32,
+            value: u32,
+        ) -> Result<(), super::MemAccessError> {
             self.value = value;
             Ok(())
         }
@@ -113,8 +136,16 @@ mod test {
             Ok(self.value)
         }
 
-        fn write(&mut self, addr: u32, _size: u32, _value: u32) -> Result<(), super::MemAccessError> {
-            Err(super::MemAccessError{addr, err: super::MemAccessErrorType::ReadOnly})
+        fn write(
+            &mut self,
+            addr: u32,
+            _size: u32,
+            _value: u32,
+        ) -> Result<(), super::MemAccessError> {
+            Err(super::MemAccessError {
+                addr,
+                err: super::MemAccessErrorType::ReadOnly,
+            })
         }
     }
 
@@ -123,7 +154,7 @@ mod test {
         let mut bus = super::Bus::default();
         let mem_value = 2048;
 
-        let dev = Box::new(SingleMemoryAddress{value: mem_value});
+        let dev = Box::new(SingleMemoryAddress { value: mem_value });
         bus.map(0x1000, 0x1000, dev);
 
         match bus.read(0x1004, 32) {
@@ -137,7 +168,7 @@ mod test {
         let mut bus = super::Bus::default();
         let mem_value = 2048;
 
-        let dev = Box::new(SingleMemoryAddress{value: mem_value});
+        let dev = Box::new(SingleMemoryAddress { value: mem_value });
         bus.map(0x1000, 0x1000, dev);
 
         match bus.read(0x1004, 32) {
@@ -147,7 +178,7 @@ mod test {
 
         let new_value = 10;
         match bus.write(0x1004, 32, new_value) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => panic!("Memory error on write {:?}", e),
         }
 
@@ -162,7 +193,7 @@ mod test {
         let mut bus = super::Bus::default();
         let mem_value = 2048;
 
-        let dev = Box::new(ReadOnly{value: mem_value});
+        let dev = Box::new(ReadOnly { value: mem_value });
         bus.map(0x1000, 0x1000, dev);
 
         match bus.read(0x1004, 32) {
@@ -172,7 +203,7 @@ mod test {
 
         match bus.write(0x1004, 32, 10) {
             Ok(_) => panic!("Write succeeded for RO memory region"),
-            Err(_) => {},
+            Err(_) => {}
         }
 
         match bus.read(0x1004, 32) {
@@ -186,12 +217,12 @@ mod test {
         let mut bus = super::Bus::default();
         let mem_value = 2048;
 
-        let dev = Box::new(SingleMemoryAddress{value: mem_value});
+        let dev = Box::new(SingleMemoryAddress { value: mem_value });
         bus.map(0x1000, 0x1000, dev);
 
         match bus.write(0x2004, 32, 10) {
             Ok(_) => panic!("Write succeeded for unmapped memory region"),
-            Err(_) => {},
+            Err(_) => {}
         }
     }
 
@@ -201,10 +232,10 @@ mod test {
         let mut bus = super::Bus::default();
         let mem_value = 2048;
 
-        let dev1 = Box::new(SingleMemoryAddress{value: mem_value});
+        let dev1 = Box::new(SingleMemoryAddress { value: mem_value });
         bus.map(0x1000, 0x1000, dev1);
 
-        let dev2 = Box::new(SingleMemoryAddress{value: mem_value});
+        let dev2 = Box::new(SingleMemoryAddress { value: mem_value });
         bus.map(0x1000, 0x1000, dev2);
     }
 }

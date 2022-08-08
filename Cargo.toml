@@ -18,3 +18,5 @@ num = "0.4"
 num-derive = "0.3"
 num-traits = "0.2"
 object = "0.29"
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm14-0"] }
+enum-map = "2.4"
