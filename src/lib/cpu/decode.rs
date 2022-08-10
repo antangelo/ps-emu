@@ -2,25 +2,25 @@ use super::opcode::{MipsBranchSpecial, MipsFunction, MipsOpcode};
 
 #[derive(Debug)]
 pub struct MipsRInstr {
-    s_reg: u8,
-    t_reg: u8,
-    d_reg: u8,
-    shamt: u8,
-    function: MipsFunction,
+    pub s_reg: u8,
+    pub t_reg: u8,
+    pub d_reg: u8,
+    pub shamt: u8,
+    pub function: MipsFunction,
 }
 
 #[derive(Debug)]
 pub struct MipsIInstr {
-    opcode: MipsOpcode,
-    s_reg: u8,
-    t_reg: u8,
-    immediate: u16,
+    pub opcode: MipsOpcode,
+    pub s_reg: u8,
+    pub t_reg: u8,
+    pub immediate: u16,
 }
 
 #[derive(Debug)]
 pub struct MipsJInstr {
-    opcode: MipsOpcode,
-    target: u32,
+    pub opcode: MipsOpcode,
+    pub target: u32,
 }
 
 #[derive(Debug)]

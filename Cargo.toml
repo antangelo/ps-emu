@@ -10,8 +10,12 @@ name = "libpsx"
 path = "src/lib/lib.rs"
 
 [[bin]]
-name = "test"
-path = "src/main.rs"
+name = "disassemble"
+path = "src/bin/disassemble/main.rs"
+
+[[bin]]
+name = "mips-run-elf"
+path = "src/bin/mips-run-elf/main.rs"
 
 [dependencies]
 num = "0.4"
@@ -19,4 +23,3 @@ num-derive = "0.3"
 num-traits = "0.2"
 object = "0.29"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm14-0"] }
-enum-map = "2.4"
