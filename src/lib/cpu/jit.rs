@@ -4,129 +4,128 @@ use inkwell::values::AnyValue;
 type TbDynFunc =
     unsafe extern "C" fn(state: *mut CpuState, bus: *mut super::bus::Bus, scratch: *mut u32);
 
-pub struct JitState {
-    idx: u64,
-    contexts: std::collections::HashMap<u64, inkwell::context::Context>,
+pub fn new_tb<'ctx>(
+    id: u64,
+    ctx: &'ctx inkwell::context::Context,
+) -> Result<TranslationBlock<'ctx>, String> {
+    //let ctx = self.create_ctx();
+    let module = ctx.create_module(&format!("tb_mod_{}", id));
+    let ee = module
+        .create_jit_execution_engine(inkwell::OptimizationLevel::None)
+        .map_err(|e| e.to_string())?;
+    let builder = ctx.create_builder();
+
+    let i32_type = ctx.i32_type();
+    let state_type = ctx.opaque_struct_type("mips_state");
+    state_type.set_body(&[i32_type.into(); 34], false);
+
+    let bus_type = ctx
+        .opaque_struct_type("mips_bus")
+        .ptr_type(inkwell::AddressSpace::Generic);
+    let i32_ptr_type = i32_type.ptr_type(inkwell::AddressSpace::Generic);
+    let bool_type = ctx.bool_type();
+
+    let read_fn = module.add_function(
+        "tb_mem_read",
+        i32_type.fn_type(
+            &[
+                bus_type.into(),
+                i32_type.into(),
+                i32_type.into(),
+                i32_ptr_type.into(),
+            ],
+            false,
+        ),
+        None,
+    );
+    let write_fn = module.add_function(
+        "tb_mem_write",
+        bool_type.fn_type(
+            &[
+                bus_type.into(),
+                i32_type.into(),
+                i32_type.into(),
+                i32_type.into(),
+            ],
+            false,
+        ),
+        None,
+    );
+
+    ee.add_global_mapping(&read_fn, tb_mem_read as usize);
+    ee.add_global_mapping(&write_fn, tb_mem_write as usize);
+
+    let void_type = ctx.void_type();
+    let state_type = module
+        .get_struct_type("mips_state")
+        .unwrap()
+        .ptr_type(inkwell::AddressSpace::Generic);
+    let fn_type = void_type.fn_type(
+        &[state_type.into(), bus_type.into(), i32_ptr_type.into()],
+        false,
+    );
+    let func_name = format!("tb_func_{}", id);
+    let func = module.add_function(&func_name, fn_type, None);
+
+    let state_arg = func
+        .get_nth_param(0)
+        .ok_or("No state arg")?
+        .into_pointer_value();
+    let bus_arg = func
+        .get_nth_param(1)
+        .ok_or("No bus arg")?
+        .into_pointer_value();
+    let scratch_arg = func
+        .get_nth_param(2)
+        .ok_or("No scratcharg")?
+        .into_pointer_value();
+
+    let block = ctx.append_basic_block(func, &func_name);
+    builder.position_at_end(block);
+
+    Ok(TranslationBlock {
+        id,
+        count_uniq: 0,
+        finalized: false,
+        ctx,
+        module,
+        ee,
+        builder,
+        func,
+        func_block: block,
+        state_arg,
+        bus_arg,
+        scratch_arg,
+        delay_slot_hazard: None,
+        delay_slot_arg: None,
+        tb_func: None,
+    })
 }
 
-impl Default for JitState {
-    fn default() -> Self {
-        JitState {
-            idx: 0,
-            contexts: std::collections::HashMap::default(),
+struct TbManager<'ctx> {
+    tb_cache: std::collections::HashMap<u32, TranslationBlock<'ctx>>,
+}
+
+impl<'ctx> TbManager<'ctx> {
+    fn new() -> Self {
+        Self {
+            tb_cache: std::collections::HashMap::default(),
         }
     }
-}
 
-impl JitState {
-    fn create_ctx(&mut self, key: u64) -> &inkwell::context::Context {
-        self.contexts
-            .insert(key, inkwell::context::Context::create());
-        self.contexts.get(&key).unwrap()
-    }
+    fn get_tb<'a>(
+        &mut self,
+        ctx: &'ctx inkwell::context::Context,
+        addr: u32,
+    ) -> Result<&mut TranslationBlock<'ctx>, String> {
+        if let None = self.tb_cache.get(&addr) {
+            let tb: TranslationBlock<'ctx> = new_tb(addr as u64, ctx)?;
+            self.tb_cache.insert(addr, tb);
+        }
 
-    // FIXME: Free contexts
-    #[allow(unused)]
-    fn free_ctx(&mut self, key: &u64) {
-        self.contexts.remove(key);
-    }
-
-    pub fn new_tb<'ctx>(&'ctx mut self) -> Result<TranslationBlock<'ctx>, String> {
-        // FIXME
-        let id = self.idx;
-        self.idx += 1;
-
-        let ctx = self.create_ctx(id);
-        let module = ctx.create_module(&format!("tb_mod_{}", id));
-        let ee = module
-            .create_jit_execution_engine(inkwell::OptimizationLevel::None)
-            .map_err(|e| e.to_string())?;
-        let builder = ctx.create_builder();
-
-        let i32_type = ctx.i32_type();
-        let state_type = ctx.opaque_struct_type("mips_state");
-        state_type.set_body(&[i32_type.into(); 34], false);
-
-        let bus_type = ctx
-            .opaque_struct_type("mips_bus")
-            .ptr_type(inkwell::AddressSpace::Generic);
-        let i32_ptr_type = i32_type.ptr_type(inkwell::AddressSpace::Generic);
-        let bool_type = ctx.bool_type();
-
-        let read_fn = module.add_function(
-            "tb_mem_read",
-            i32_type.fn_type(
-                &[
-                    bus_type.into(),
-                    i32_type.into(),
-                    i32_type.into(),
-                    i32_ptr_type.into(),
-                ],
-                false,
-            ),
-            None,
-        );
-        let write_fn = module.add_function(
-            "tb_mem_write",
-            bool_type.fn_type(
-                &[
-                    bus_type.into(),
-                    i32_type.into(),
-                    i32_type.into(),
-                    i32_type.into(),
-                ],
-                false,
-            ),
-            None,
-        );
-
-        ee.add_global_mapping(&read_fn, tb_mem_read as usize);
-        ee.add_global_mapping(&write_fn, tb_mem_write as usize);
-
-        let void_type = ctx.void_type();
-        let state_type = module
-            .get_struct_type("mips_state")
-            .unwrap()
-            .ptr_type(inkwell::AddressSpace::Generic);
-        let fn_type = void_type.fn_type(
-            &[state_type.into(), bus_type.into(), i32_ptr_type.into()],
-            false,
-        );
-        let func_name = format!("tb_func_{}", id);
-        let func = module.add_function(&func_name, fn_type, None);
-
-        let state_arg = func
-            .get_nth_param(0)
-            .ok_or("No state arg")?
-            .into_pointer_value();
-        let bus_arg = func
-            .get_nth_param(1)
-            .ok_or("No bus arg")?
-            .into_pointer_value();
-        let scratch_arg = func
-            .get_nth_param(2)
-            .ok_or("No scratcharg")?
-            .into_pointer_value();
-
-        let block = ctx.append_basic_block(func, &func_name);
-        builder.position_at_end(block);
-
-        Ok(TranslationBlock {
-            id,
-            count_uniq: 0,
-            finalized: false,
-            ctx,
-            module,
-            ee,
-            builder,
-            func,
-            func_block: block,
-            state_arg,
-            bus_arg,
-            scratch_arg,
-            delay_slot_hazard: None,
-            delay_slot_arg: None,
-        })
+        // Exchange the TB for mutable reference into the map
+        let tb = self.tb_cache.get_mut(&addr);
+        Ok(tb.unwrap())
     }
 }
 
@@ -156,6 +155,8 @@ pub struct TranslationBlock<'ctx> {
 
     delay_slot_hazard: Option<fn(&mut TranslationBlock)>,
     delay_slot_arg: Option<DelaySlotArg<'ctx>>,
+
+    tb_func: Option<inkwell::execution_engine::JitFunction<'ctx, TbDynFunc>>,
 }
 
 impl<'ctx> TranslationBlock<'ctx> {
@@ -801,10 +802,10 @@ impl<'ctx> TranslationBlock<'ctx> {
         Ok(addr)
     }
 
-    pub fn finalize(&self) -> Option<inkwell::execution_engine::JitFunction<TbDynFunc>> {
+    pub fn finalize(&mut self) {
         // FIXME: Cache TBs
 
-        unsafe { self.ee.get_function(&format!("tb_func_{}", self.id)).ok() }
+        unsafe { self.tb_func = self.ee.get_function(&format!("tb_func_{}", self.id)).ok() }
     }
 }
 
@@ -876,7 +877,8 @@ pub unsafe extern "C" fn tb_mem_write(
 }
 
 pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), ()> {
-    let mut mgr = JitState::default();
+    let ctx = inkwell::context::Context::create();
+    let mut tb_mgr = TbManager::new();
     let mut scratch: u32 = 0;
     let mut prev_pc = 0;
 
@@ -887,17 +889,21 @@ pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), ()
 
         prev_pc = state.pc;
 
-        let mut tb = mgr.new_tb().map_err(|_| ())?;
-        tb.translate(bus, state.pc).map_err(|_| ())?;
+        let tb = tb_mgr.get_tb(&ctx, state.pc).map_err(|_| ())?;
 
-        let func = tb.finalize().ok_or(())?;
+        if tb.tb_func.is_none() {
+            tb.translate(bus, state.pc).map_err(|_| ())?;
+            tb.finalize();
+        }
 
-        unsafe {
-            func.call(
-                core::ptr::addr_of_mut!(*state),
-                core::ptr::addr_of_mut!(*bus),
-                core::ptr::addr_of_mut!(scratch),
-            );
+        if let Some(func) = tb.tb_func.as_ref() {
+            unsafe {
+                func.call(
+                    core::ptr::addr_of_mut!(*state),
+                    core::ptr::addr_of_mut!(*bus),
+                    core::ptr::addr_of_mut!(scratch),
+                );
+            }
         }
     }
 
