@@ -11,6 +11,8 @@ fn load_section(bus: &mut libpsx::cpu::bus::Bus, addr: u32, buf: &[u8]) {
 struct DiscountUart;
 
 impl libpsx::cpu::bus::BusDevice for DiscountUart {
+    fn validate(&mut self, _base_addr: u32, _size: u32) {}
+
     fn write(
         &mut self,
         _addr: u32,
@@ -39,7 +41,7 @@ fn main() {
         panic!("Not a MIPS ELF file");
     }
 
-    let ram = Box::new(libpsx::mem::memory::RAM::default());
+    let ram = Box::new(libpsx::mem::memory::RAM::new(1 << 25));
     let uart = Box::new(DiscountUart);
 
     let mut bus = libpsx::cpu::bus::Bus::default();

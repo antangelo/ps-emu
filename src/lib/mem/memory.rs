@@ -3,23 +3,12 @@ use object::Endian;
 
 pub struct RAM {
     endianness: object::Endianness,
-    mem: std::vec::Vec<u8>,
+    mem: Box<[u8]>,
+    size: u32,
 }
 
 impl RAM {
-    fn read16(&self, addr: u32) -> Result<u16, MemAccessError> {
-        let us_addr = addr as usize;
-        Ok(self.endianness.read_u16_bytes(self.mem[us_addr..us_addr+2].try_into().unwrap()))
-    }
-
-    fn read32(&self, addr: u32) -> Result<u32, MemAccessError> {
-        let us_addr = addr as usize;
-        Ok(self.endianness.read_u32_bytes(self.mem[us_addr..us_addr+4].try_into().unwrap()))
-    }
-}
-
-impl Default for RAM {
-    fn default() -> Self {
+    pub fn new(size: u32) -> Self {
         // Endianness is managed on the bus level, but it is convenient
         // to use it to read bytes into u32/u16s as well
         // so we use the system endianess to do it.
@@ -31,41 +20,52 @@ impl Default for RAM {
 
         RAM {
             endianness,
-            mem: vec![0; 1 << 25],
+            mem: vec![0; size as usize].into_boxed_slice(),
+            size,
         }
     }
 }
 
 impl bus::BusDevice for RAM {
+    fn validate(&mut self, _base_addr: u32, size: u32) {
+        assert!(self.size >= size);
+    }
+
     fn read(&mut self, addr: u32, size: u32) -> Result<u32, MemAccessError> {
-        match size {
-            //8 => Ok(self.ram.get(&addr).map(|x| *x as u32).unwrap_or(0)),
-            8 => Ok(unsafe { *self.mem.get_unchecked(addr as usize) as u32 }),
-            16 => self.read16(addr).map(|x| x as u32),
-            32 => self.read32(addr),
-            _ => Err(MemAccessError {
-                addr,
-                err: MemAccessErrorType::BadSize,
-            }),
+        unsafe {
+            let mem: *const u8 = self.mem.as_ptr().add(addr as usize);
+            match size {
+                8 => Ok(*mem as u32),
+                16 => Ok(self.endianness.read_u16(*(mem as *const u16)) as u32),
+                32 => Ok(self.endianness.read_u32(*(mem as *const u32))),
+                _ => Err(MemAccessError {
+                    addr,
+                    err: MemAccessErrorType::BadSize,
+                }),
+            }
         }
     }
 
     fn write(&mut self, addr: u32, size: u32, value: u32) -> Result<(), MemAccessError> {
-        let vals = match size {
-            8 => vec![value as u8],
-            16 => self.endianness.write_u16_bytes(value as u16).to_vec(),
-            32 => self.endianness.write_u32_bytes(value).to_vec(),
-            _ => {
-                return Err(MemAccessError {
-                    addr,
-                    err: MemAccessErrorType::BadSize,
-                });
+        unsafe {
+            let mem: *mut u8 = self.mem.as_mut_ptr().add(addr as usize);
+            match size {
+                8 => {
+                    *mem = value as u8;
+                },
+                16 => {
+                    *(mem as *mut u16) = self.endianness.write_u16(value as u16);
+                },
+                32 => {
+                    *(mem as *mut u32) = self.endianness.write_u32(value);
+                },
+                _ => {
+                    return Err(MemAccessError {
+                        addr,
+                        err: MemAccessErrorType::BadSize,
+                    });
+                }
             }
-        };
-
-        for i in 0..vals.len() {
-            //self.ram.insert(addr + i as u32, vals[i]);
-            self.mem[(addr as usize) + i] = vals[i];
         }
 
         Ok(())

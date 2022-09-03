@@ -30,7 +30,7 @@ fn main() {
         panic!("Not a MIPS ELF file");
     }
 
-    let ram = Box::new(libpsx::mem::memory::RAM::default());
+    let ram = Box::new(libpsx::mem::memory::RAM::new(1 << 25));
 
     let mut bus = libpsx::cpu::bus::Bus::default();
     bus.endianness = obj.endianness();

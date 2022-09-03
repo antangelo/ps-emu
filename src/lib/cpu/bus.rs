@@ -7,6 +7,7 @@ struct BusEntry {
 }
 
 pub trait BusDevice {
+    fn validate(&mut self, base_addr: u32, size: u32);
     fn read(&mut self, addr: u32, size: u32) -> Result<u32, MemAccessError>;
     fn write(&mut self, addr: u32, size: u32, value: u32) -> Result<(), MemAccessError>;
 }
@@ -40,7 +41,8 @@ impl Default for Bus {
 }
 
 impl Bus {
-    pub fn map(&mut self, addr: u32, size: u32, device: Box<dyn BusDevice>) {
+    pub fn map(&mut self, addr: u32, size: u32, mut device: Box<dyn BusDevice>) {
+        device.validate(addr, size);
         if let Some((a, ent)) = self.bus.range(..=addr).next_back() {
             if addr >= *a && addr < *a + ent.size {
                 panic!(
