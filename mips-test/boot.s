@@ -1,7 +1,8 @@
 .global __start
 
 __start:
-    li $sp, 0x1000
+    addiu $sp, $0, 0
+    lui $sp, 0x01f0
 
     jal main
     nop

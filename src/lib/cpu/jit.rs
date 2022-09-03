@@ -10,7 +10,7 @@ pub fn new_tb<'ctx>(
 ) -> Result<TranslationBlock<'ctx>, String> {
     let module = ctx.create_module(&format!("tb_mod_{}", id));
     let ee = module
-        .create_jit_execution_engine(inkwell::OptimizationLevel::None)
+        .create_jit_execution_engine(inkwell::OptimizationLevel::Aggressive)
         .map_err(|e| e.to_string())?;
     let builder = ctx.create_builder();
 
@@ -112,18 +112,20 @@ impl<'ctx> TbManager<'ctx> {
         }
     }
 
-    fn get_tb<'a>(
+    fn get_tb(
         &mut self,
         ctx: &'ctx inkwell::context::Context,
         addr: u32,
-    ) -> Result<&mut TranslationBlock<'ctx>, String> {
-        if let None = self.tb_cache.get(&addr) {
-            let tb: TranslationBlock<'ctx> = new_tb(addr as u64, ctx)?;
+        bus: &mut super::bus::Bus,
+    ) -> Result<&TranslationBlock<'ctx>, String> {
+        if !self.tb_cache.contains_key(&addr) {
+            let mut tb = new_tb(addr as u64, ctx)?;
+            tb.translate(bus, addr)?;
+            tb.finalize();
             self.tb_cache.insert(addr, tb);
         }
 
-        // Exchange the TB for mutable reference into the map
-        let tb = self.tb_cache.get_mut(&addr);
+        let tb = self.tb_cache.get(&addr);
         Ok(tb.unwrap())
     }
 }
@@ -249,8 +251,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             return;
         }
 
-        let i16_type = self.ctx.i16_type();
-        let const_imm = i16_type.const_int(instr.immediate.into(), true);
+        let i32_type = self.ctx.i16_type();
+        let const_imm = i32_type.const_int(instr.immediate.into(), true);
 
         let dest_reg =
             self.gep_gp_register(instr.t_reg, &format!("addiu_{}_dest", self.count_uniq));
@@ -449,10 +451,9 @@ impl<'ctx> TranslationBlock<'ctx> {
             return;
         }
 
-        let i16_type = self.ctx.i16_type();
         let i32_type = self.ctx.i32_type();
 
-        let offset = i16_type.const_int(instr.immediate as u64, true);
+        let offset = i32_type.const_int(instr.immediate as u64, true);
 
         let base_val = self.get_gpr_value(
             instr.s_reg,
@@ -645,10 +646,10 @@ impl<'ctx> TranslationBlock<'ctx> {
             return;
         }
 
-        let i16_type = self.ctx.i16_type();
+        let i32_type = self.ctx.i32_type();
 
         let s_reg = self.gep_gp_register(instr.s_reg, &format!("ori_{}_s_reg", self.count_uniq));
-        let immed = i16_type.const_int(instr.immediate as u64, true);
+        let immed = i32_type.const_int(instr.immediate as u64, true);
 
         let t_val = self.get_gpr_value(instr.t_reg, &format!("ori_{}", self.count_uniq));
 
@@ -662,10 +663,9 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     fn emit_sb(&mut self, instr: &decode::MipsIInstr) {
-        let i16_type = self.ctx.i16_type();
         let i32_type = self.ctx.i32_type();
 
-        let offset = i16_type.const_int(instr.immediate as u64, true);
+        let offset = i32_type.const_int(instr.immediate as u64, true);
 
         let base_val = self.get_gpr_value(instr.s_reg, &format!("sb_{}", self.count_uniq));
         let addr =
@@ -688,10 +688,9 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     fn emit_sw(&mut self, instr: &decode::MipsIInstr) {
-        let i16_type = self.ctx.i16_type();
         let i32_type = self.ctx.i32_type();
 
-        let offset = i16_type.const_int(instr.immediate as u64, true);
+        let offset = i32_type.const_int(instr.immediate as u64, true);
 
         let base_val = self.get_gpr_value(instr.s_reg, &format!("sw_{}", self.count_uniq));
         let addr =
@@ -793,6 +792,7 @@ impl<'ctx> TranslationBlock<'ctx> {
     pub fn finalize(&mut self) {
         // FIXME: Cache TBs
 
+        self.module.print_to_file("./curr.ll").unwrap();
         unsafe { self.tb_func = self.ee.get_function(&format!("tb_func_{}", self.id)).ok() }
     }
 }
@@ -858,7 +858,8 @@ pub unsafe extern "C" fn tb_mem_write(
     value: u32,
 ) -> bool {
     assert_ne!(std::ptr::null_mut(), bus);
-    match (*bus).write(addr, size, value) {
+    let wv = (*bus).write(addr, size, value);
+    match wv {
         Ok(_) => true,
         Err(_) => false,
     }
@@ -869,6 +870,8 @@ pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), ()
     let mut tb_mgr = TbManager::new();
     let mut scratch: u32 = 0;
     let mut prev_pc = 0;
+    let mut icount = 0;
+    let now = std::time::Instant::now();
 
     loop {
         if state.pc == prev_pc {
@@ -877,12 +880,8 @@ pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), ()
 
         prev_pc = state.pc;
 
-        let tb = tb_mgr.get_tb(&ctx, state.pc).map_err(|_| ())?;
-
-        if tb.tb_func.is_none() {
-            tb.translate(bus, state.pc).map_err(|_| ())?;
-            tb.finalize();
-        }
+        let tb = tb_mgr.get_tb(&ctx, state.pc, bus).map_err(|_| ())?;
+        icount += tb.count_uniq;
 
         if let Some(func) = tb.tb_func.as_ref() {
             unsafe {
@@ -892,11 +891,19 @@ pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), ()
                     core::ptr::addr_of_mut!(scratch),
                 );
             }
+        } else {
+            panic!("Failed to compile TB");
         }
     }
 
+    let elapsed_micros = now.elapsed().as_micros();
+    let elapsed = (elapsed_micros as f64) / 1_000_000.0;
+
     println!("CpuState: {:x?}", state);
     println!("pc: {:#08x}", state.pc);
+    println!("elapsed time: {}", elapsed);
+    println!("icount: {}", icount);
+    println!("MIPS: {}", (icount as f64) / elapsed / 1_000_000.0);
 
     Ok(())
 }
