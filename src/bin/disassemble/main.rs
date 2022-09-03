@@ -3,12 +3,21 @@ use object::{Object, ObjectSection};
 fn mips_disassemble_bus(bus: &mut libpsx::cpu::bus::Bus, addr: u32, size: usize) {
     for i in 0..size {
         let instr = bus.read(addr + 4 * (i as u32), 32).unwrap();
-        println!(
-            "{:#08x} \t {:#08x} \t {}",
-            addr + 4 * (i as u32),
-            instr,
-            libpsx::cpu::decode::mips_decode(instr)
-        );
+
+
+        let dec = libpsx::cpu::decode::mips_decode(instr);
+        match dec {
+            libpsx::cpu::decode::MipsInstr::RType(r) => println!("{}", r.function),
+            libpsx::cpu::decode::MipsInstr::IType(i) => println!("{}", i.opcode),
+            libpsx::cpu::decode::MipsInstr::JType(j) => println!("{}", j.opcode),
+            _ => println!("{}", dec),
+        }
+       // println!(
+       //     "{:#08x} \t {:#08x} \t {}",
+       //     addr + 4 * (i as u32),
+       //     instr,
+       //     libpsx::cpu::decode::mips_decode(instr)
+       // );
     }
 }
 

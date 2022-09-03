@@ -287,6 +287,88 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
     }
 
+    fn branch_delay_slot_action<'a, 'b>(tb: &'a mut TranslationBlock<'b>) {
+        let arg = tb.delay_slot_arg.as_ref().unwrap();
+        let i32_type = tb.ctx.i32_type();
+
+        let taken = tb
+            .ctx
+            .insert_basic_block_after(tb.func_block, &format!("beq_{}_taken", arg.count));
+
+        {
+            tb.builder.position_at_end(taken);
+
+            // FIXME: This is stupid
+            let immed_i = arg.immed as i16;
+            let target = (immed_i as i32) * 4;
+
+            let curr_pc_off = (tb.count_uniq * 4) as i32;
+            let target_v = i32_type.const_int((target + curr_pc_off) as u64, true);
+
+            let pc_ptr = tb.gep_pc(&format!("beq_{}", arg.count));
+            let pc_val = tb
+                .builder
+                .build_load(pc_ptr, &format!("beq_{}_pc_val", arg.count));
+
+            let next_pc = tb.builder.build_int_add(
+                pc_val.into_int_value(),
+                target_v,
+                &format!("beq_{}_next_pc", arg.count),
+                );
+            tb.builder.build_store(pc_ptr, next_pc);
+            tb.builder.build_return(None);
+        }
+
+        let not_taken = tb
+            .ctx
+            .insert_basic_block_after(taken, &format!("beq_{}_not_taken", arg.count));
+
+        {
+            tb.builder.position_at_end(not_taken);
+            let target_v = i32_type.const_int((tb.count_uniq * 4 + 4) as u64, false);
+
+            let pc_ptr = tb.gep_pc(&format!("beq_{}", arg.count));
+            let pc_val = tb
+                .builder
+                .build_load(pc_ptr, &format!("beq_{}_pc_val", arg.count));
+
+            let next_pc = tb.builder.build_int_add(
+                pc_val.into_int_value(),
+                target_v,
+                &format!("beq_{}_next_pc", arg.count),
+                );
+            tb.builder.build_store(pc_ptr, next_pc);
+            tb.builder.build_return(None);
+        }
+
+        tb.builder.position_at_end(tb.func_block);
+        tb.builder
+            .build_conditional_branch(arg.value.into_int_value(), taken, not_taken);
+        tb.finalized = true;
+    }
+
+    fn emit_bgtz(&mut self, instr: &decode::MipsIInstr) {
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("beq_{}", self.count_uniq));
+        let i32_type = self.ctx.i32_type();
+        let zero = i32_type.const_zero();
+        let cmp = self.builder.build_int_compare(
+            inkwell::IntPredicate::SGT,
+            s_val,
+            zero,
+            &format!("bgtz_{}_cmp", self.count_uniq),
+        );
+
+        let count = self.count_uniq;
+        self.instr_finished_emitting();
+
+        self.delay_slot_arg = Some(DelaySlotArg {
+            count,
+            immed: instr.immediate,
+            value: cmp.into(),
+        });
+        self.delay_slot_hazard = Some(Self::branch_delay_slot_action);
+    }
+
     fn emit_beq(&mut self, instr: &decode::MipsIInstr) {
         let s_val = self.get_gpr_value(instr.s_reg, &format!("beq_{}", self.count_uniq));
         let t_val = self.get_gpr_value(instr.t_reg, &format!("beq_{}", self.count_uniq));
@@ -305,65 +387,7 @@ impl<'ctx> TranslationBlock<'ctx> {
             immed: instr.immediate,
             value: cmp.into(),
         });
-        self.delay_slot_hazard = Some(|tb| {
-            let arg = tb.delay_slot_arg.as_ref().unwrap();
-            let i32_type = tb.ctx.i32_type();
-
-            let taken = tb
-                .ctx
-                .insert_basic_block_after(tb.func_block, &format!("beq_{}_taken", arg.count));
-
-            {
-                tb.builder.position_at_end(taken);
-
-                // FIXME: This is stupid
-                let immed_i = arg.immed as i16;
-                let target = (immed_i as i32) * 4;
-
-                let curr_pc_off = (tb.count_uniq * 4) as i32;
-                let target_v = i32_type.const_int((target + curr_pc_off) as u64, true);
-
-                let pc_ptr = tb.gep_pc(&format!("beq_{}", arg.count));
-                let pc_val = tb
-                    .builder
-                    .build_load(pc_ptr, &format!("beq_{}_pc_val", arg.count));
-
-                let next_pc = tb.builder.build_int_add(
-                    pc_val.into_int_value(),
-                    target_v,
-                    &format!("beq_{}_next_pc", arg.count),
-                );
-                tb.builder.build_store(pc_ptr, next_pc);
-                tb.builder.build_return(None);
-            }
-
-            let not_taken = tb
-                .ctx
-                .insert_basic_block_after(taken, &format!("beq_{}_not_taken", arg.count));
-
-            {
-                tb.builder.position_at_end(not_taken);
-                let target_v = i32_type.const_int((tb.count_uniq * 4 + 4) as u64, false);
-
-                let pc_ptr = tb.gep_pc(&format!("beq_{}", arg.count));
-                let pc_val = tb
-                    .builder
-                    .build_load(pc_ptr, &format!("beq_{}_pc_val", arg.count));
-
-                let next_pc = tb.builder.build_int_add(
-                    pc_val.into_int_value(),
-                    target_v,
-                    &format!("beq_{}_next_pc", arg.count),
-                );
-                tb.builder.build_store(pc_ptr, next_pc);
-                tb.builder.build_return(None);
-            }
-
-            tb.builder.position_at_end(tb.func_block);
-            tb.builder
-                .build_conditional_branch(arg.value.into_int_value(), taken, not_taken);
-            tb.finalized = true;
-        });
+        self.delay_slot_hazard = Some(Self::branch_delay_slot_action);
     }
 
     fn emit_bne(&mut self, instr: &decode::MipsIInstr) {
@@ -384,65 +408,7 @@ impl<'ctx> TranslationBlock<'ctx> {
             immed: instr.immediate,
             value: cmp.into(),
         });
-        self.delay_slot_hazard = Some(|tb| {
-            let arg = tb.delay_slot_arg.as_ref().unwrap();
-            let i32_type = tb.ctx.i32_type();
-
-            let taken = tb
-                .ctx
-                .insert_basic_block_after(tb.func_block, &format!("bne_{}_taken", arg.count));
-
-            {
-                tb.builder.position_at_end(taken);
-
-                // FIXME: This is stupid
-                let immed_i = arg.immed as i16;
-                let target = (immed_i as i32) * 4;
-
-                let curr_pc_off = (tb.count_uniq * 4) as i32;
-                let target_v = i32_type.const_int((target + curr_pc_off) as u64, true);
-
-                let pc_ptr = tb.gep_pc(&format!("bne_{}", arg.count));
-                let pc_val = tb
-                    .builder
-                    .build_load(pc_ptr, &format!("bne_{}_pc_val", arg.count));
-
-                let next_pc = tb.builder.build_int_add(
-                    pc_val.into_int_value(),
-                    target_v,
-                    &format!("bne_{}_next_pc", arg.count),
-                );
-                tb.builder.build_store(pc_ptr, next_pc);
-                tb.builder.build_return(None);
-            }
-
-            let not_taken = tb
-                .ctx
-                .insert_basic_block_after(taken, &format!("bne_{}_not_taken", arg.count));
-
-            {
-                tb.builder.position_at_end(not_taken);
-                let target_v = i32_type.const_int((tb.count_uniq * 4 + 4) as u64, false);
-
-                let pc_ptr = tb.gep_pc(&format!("bne_{}", arg.count));
-                let pc_val = tb
-                    .builder
-                    .build_load(pc_ptr, &format!("bne_{}_pc_val", arg.count));
-
-                let next_pc = tb.builder.build_int_add(
-                    pc_val.into_int_value(),
-                    target_v,
-                    &format!("bne_{}_next_pc", arg.count),
-                );
-                tb.builder.build_store(pc_ptr, next_pc);
-                tb.builder.build_return(None);
-            }
-
-            tb.builder.position_at_end(tb.func_block);
-            tb.builder
-                .build_conditional_branch(arg.value.into_int_value(), taken, not_taken);
-            tb.finalized = true;
-        });
+        self.delay_slot_hazard = Some(Self::branch_delay_slot_action);
     }
 
     fn emit_load_sized(&mut self, size: u32, instr: &decode::MipsIInstr, sext: bool) {
@@ -733,6 +699,39 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
     }
 
+    fn emit_mflo(&mut self, instr: &decode::MipsRInstr) {
+        let d_reg = self.gep_gp_register(instr.d_reg, &format!("mflo_{}_d_reg", self.count_uniq));
+        let lo_ptr = self.gep_lo(&format!("mflo_{}_lo_ptr", self.count_uniq));
+        let lo = self.builder.build_load(lo_ptr, &format!("mflo_{}_lo", self.count_uniq));
+        self.builder.build_store(d_reg, lo);
+
+        self.instr_finished_emitting();
+    }
+
+    fn emit_mfhi(&mut self, instr: &decode::MipsRInstr) {
+        let d_reg = self.gep_gp_register(instr.d_reg, &format!("mfhi_{}_d_reg", self.count_uniq));
+        let hi_ptr = self.gep_lo(&format!("mfhi_{}_hi_ptr", self.count_uniq));
+        let hi = self.builder.build_load(hi_ptr, &format!("mfhi_{}_hi", self.count_uniq));
+        self.builder.build_store(d_reg, hi);
+
+        self.instr_finished_emitting();
+    }
+
+    fn emit_divu(&mut self, instr: &decode::MipsRInstr) {
+        let s_reg = self.get_gpr_value(instr.s_reg, &format!("divu_{}_s", self.count_uniq));
+        let t_reg = self.get_gpr_value(instr.t_reg, &format!("divu_{}_t", self.count_uniq));
+
+        let div = self.builder.build_int_unsigned_div(s_reg, t_reg, &format!("divu_{}_quotient", self.count_uniq));
+        let lo = self.gep_lo(&format!("divu_{}_lo", self.count_uniq));
+        self.builder.build_store(lo, div);
+
+        let modulo = self.builder.build_int_unsigned_rem(s_reg, t_reg, &format!("divu_{}_mod", self.count_uniq));
+        let hi = self.gep_hi(&format!("divu_{}_hi", self.count_uniq));
+        self.builder.build_store(hi, modulo);
+
+        self.instr_finished_emitting();
+    }
+
     fn emit_r_instr(&mut self, instr: &decode::MipsRInstr) {
         match instr.function {
             opcode::MipsFunction::Sll => self.emit_sll(instr),
@@ -740,6 +739,9 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsFunction::Jalr => self.emit_jalr(instr),
             opcode::MipsFunction::AddU => self.emit_addu(instr),
             opcode::MipsFunction::Or => self.emit_or(instr),
+            opcode::MipsFunction::Mflo => self.emit_mflo(instr),
+            opcode::MipsFunction::Mfhi => self.emit_mfhi(instr),
+            opcode::MipsFunction::DivU => self.emit_divu(instr),
             _ => panic!("Not implemented: {}", instr.function),
         }
     }
@@ -747,6 +749,7 @@ impl<'ctx> TranslationBlock<'ctx> {
     fn emit_i_instr(&mut self, instr: &decode::MipsIInstr) {
         match instr.opcode {
             opcode::MipsOpcode::Beq => self.emit_beq(instr),
+            opcode::MipsOpcode::Bgtz => self.emit_bgtz(instr),
             opcode::MipsOpcode::Bne => self.emit_bne(instr),
             opcode::MipsOpcode::AddIU => self.emit_addiu(instr),
             opcode::MipsOpcode::OrI => self.emit_ori(instr),
@@ -768,7 +771,7 @@ impl<'ctx> TranslationBlock<'ctx> {
         }
     }
 
-    pub fn translate(&mut self, bus: &mut super::bus::Bus, pc: u32) -> Result<u32, &str> {
+    pub fn translate(&mut self, bus: &mut super::bus::Bus, pc: u32) -> Result<u32, String> {
         let mut addr = pc;
         while !self.finalized {
             let instr_raw = bus.read(addr, 32).map_err(|_| "Failed to read instr")?;
@@ -779,7 +782,14 @@ impl<'ctx> TranslationBlock<'ctx> {
                 decode::MipsInstr::IType(i) => self.emit_i_instr(&i),
                 decode::MipsInstr::JType(j) => self.emit_j_instr(&j),
                 _ => {
-                    return Err("");
+                    self.emit_r_instr(&decode::MipsRInstr{
+                        s_reg: 0,
+                        t_reg: 0,
+                        d_reg: 0,
+                        shamt: 0,
+                        function: opcode::MipsFunction::Sll
+                    });
+                    //return Err(format!("Invalid instruction {:#08x}: {:#08x} {}", addr, instr_raw, instr));
                 }
             }
 
@@ -792,7 +802,6 @@ impl<'ctx> TranslationBlock<'ctx> {
     pub fn finalize(&mut self) {
         // FIXME: Cache TBs
 
-        self.module.print_to_file("./curr.ll").unwrap();
         unsafe { self.tb_func = self.ee.get_function(&format!("tb_func_{}", self.id)).ok() }
     }
 }
@@ -865,7 +874,7 @@ pub unsafe extern "C" fn tb_mem_write(
     }
 }
 
-pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), ()> {
+pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), String> {
     let ctx = inkwell::context::Context::create();
     let mut tb_mgr = TbManager::new();
     let mut scratch: u32 = 0;
@@ -880,7 +889,7 @@ pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), ()
 
         prev_pc = state.pc;
 
-        let tb = tb_mgr.get_tb(&ctx, state.pc, bus).map_err(|_| ())?;
+        let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
         icount += tb.count_uniq;
 
         if let Some(func) = tb.tb_func.as_ref() {

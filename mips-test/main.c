@@ -52,8 +52,8 @@ void print_int(int d)
 int main()
 {
     int f = fibonnaci(25);
-    print_int(f);
-    print("\r\n");
+//    print_int(f);
+//    print("\r\n");
 
     print("Hello world!\r\n");
 
