@@ -24,7 +24,7 @@ void print(char *c)
 
 int main()
 {
-    int f = fibonnaci(5);
+    int f = fibonnaci(20);
 
     //*printer = f; 
     print("Hello world!\r\n");

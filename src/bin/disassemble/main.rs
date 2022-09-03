@@ -1,18 +1,8 @@
-use libpsx::cpu::decode::MipsInstr;
 use object::{Object, ObjectSection};
 
 fn mips_disassemble_bus(bus: &mut libpsx::cpu::bus::Bus, addr: u32, size: usize) {
     for i in 0..size {
         let instr = bus.read(addr + 4 * (i as u32), 32).unwrap();
-        let decoded_instr = libpsx::cpu::decode::mips_decode(instr);
-
-        // match decoded_instr {
-        //     MipsInstr::IType(i) => println!("{}", i.opcode),
-        //     MipsInstr::RType(r) => println!("{}", r.function),
-        //     MipsInstr::JType(j) => println!("{}", j.opcode),
-        //     _ => panic!("invalid instruction"),
-        // }
-
         println!(
             "{:#08x} \t {:#08x} \t {}",
             addr + 4 * (i as u32),

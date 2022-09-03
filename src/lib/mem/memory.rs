@@ -3,24 +3,18 @@ use object::Endian;
 
 pub struct RAM {
     endianness: object::Endianness,
-    ram: std::collections::BTreeMap<u32, u8>,
+    mem: std::vec::Vec<u8>,
 }
 
 impl RAM {
     fn read16(&self, addr: u32) -> Result<u16, MemAccessError> {
-        let range_it = self.ram.range(addr..addr + 2);
-        let mut arr: Vec<u8> = vec![0; 2];
-        range_it.for_each(|x| arr[(x.0 - addr) as usize] = *(x.1));
-
-        Ok(self.endianness.read_u16_bytes(arr.try_into().unwrap()))
+        let us_addr = addr as usize;
+        Ok(self.endianness.read_u16_bytes(self.mem[us_addr..us_addr+2].try_into().unwrap()))
     }
 
     fn read32(&self, addr: u32) -> Result<u32, MemAccessError> {
-        let range_it = self.ram.range(addr..addr + 4);
-        let mut arr: Vec<u8> = vec![0; 4];
-        range_it.for_each(|x| arr[(x.0 - addr) as usize] = *(x.1));
-
-        Ok(self.endianness.read_u32_bytes(arr.try_into().unwrap()))
+        let us_addr = addr as usize;
+        Ok(self.endianness.read_u32_bytes(self.mem[us_addr..us_addr+4].try_into().unwrap()))
     }
 }
 
@@ -37,7 +31,7 @@ impl Default for RAM {
 
         RAM {
             endianness,
-            ram: std::collections::BTreeMap::default(),
+            mem: vec![0; 1 << 25],
         }
     }
 }
@@ -45,7 +39,8 @@ impl Default for RAM {
 impl bus::BusDevice for RAM {
     fn read(&mut self, addr: u32, size: u32) -> Result<u32, MemAccessError> {
         match size {
-            8 => Ok(self.ram.get(&addr).map(|x| *x as u32).unwrap_or(0)),
+            //8 => Ok(self.ram.get(&addr).map(|x| *x as u32).unwrap_or(0)),
+            8 => Ok(unsafe { *self.mem.get_unchecked(addr as usize) as u32 }),
             16 => self.read16(addr).map(|x| x as u32),
             32 => self.read32(addr),
             _ => Err(MemAccessError {
@@ -69,7 +64,8 @@ impl bus::BusDevice for RAM {
         };
 
         for i in 0..vals.len() {
-            self.ram.insert(addr + i as u32, vals[i]);
+            //self.ram.insert(addr + i as u32, vals[i]);
+            self.mem[(addr as usize) + i] = vals[i];
         }
 
         Ok(())

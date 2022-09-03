@@ -8,7 +8,6 @@ pub fn new_tb<'ctx>(
     id: u64,
     ctx: &'ctx inkwell::context::Context,
 ) -> Result<TranslationBlock<'ctx>, String> {
-    //let ctx = self.create_ctx();
     let module = ctx.create_module(&format!("tb_mod_{}", id));
     let ee = module
         .create_jit_execution_engine(inkwell::OptimizationLevel::None)
@@ -130,7 +129,6 @@ impl<'ctx> TbManager<'ctx> {
 }
 
 struct DelaySlotArg<'ctx> {
-    reg: u8,
     count: u64,
     immed: u16,
     value: inkwell::values::BasicValueEnum<'ctx>,
@@ -301,7 +299,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
 
         self.delay_slot_arg = Some(DelaySlotArg {
-            reg: 0,
             count,
             immed: instr.immediate,
             value: cmp.into(),
@@ -381,7 +378,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
 
         self.delay_slot_arg = Some(DelaySlotArg {
-            reg: 0,
             count,
             immed: instr.immediate,
             value: cmp.into(),
@@ -496,14 +492,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         // FIXME: Check result of mem read
 
         self.instr_finished_emitting();
-
-        // self.delay_slot_arg = Some(DelaySlotArg{reg: instr.t_reg, count: count_uniq, value: read_val});
-        // self.delay_slot_hazard = Some(|tb| {
-        //     let arg_opt = tb.delay_slot_arg.as_ref();
-        //     let arg = arg_opt.unwrap();
-        //     let t_reg = tb.gep_gp_register(arg.reg, &format!("{}_{}_t_reg", "opcode", arg.count));
-        //     tb.builder.build_store(t_reg, arg.value.into_int_value());
-        // });
     }
 
     fn emit_lb(&mut self, instr: &decode::MipsIInstr) {
