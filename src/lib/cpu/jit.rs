@@ -251,8 +251,9 @@ impl<'ctx> TranslationBlock<'ctx> {
             return;
         }
 
-        let i32_type = self.ctx.i16_type();
-        let const_imm = i32_type.const_int(instr.immediate.into(), true);
+        let i32_type = self.ctx.i32_type();
+        let immed = (instr.immediate as i16) as i32;
+        let const_imm = i32_type.const_int(immed as u64, true);
 
         let dest_reg =
             self.gep_gp_register(instr.t_reg, &format!("addiu_{}_dest", self.count_uniq));
@@ -614,16 +615,16 @@ impl<'ctx> TranslationBlock<'ctx> {
 
         let i32_type = self.ctx.i32_type();
 
-        let s_reg = self.gep_gp_register(instr.s_reg, &format!("ori_{}_s_reg", self.count_uniq));
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("ori_{}", self.count_uniq));
         let immed = i32_type.const_int(instr.immediate as u64, true);
 
-        let t_val = self.get_gpr_value(instr.t_reg, &format!("ori_{}", self.count_uniq));
+        let t_reg = self.gep_gp_register(instr.t_reg, &format!("ori_{}_t_reg", self.count_uniq));
 
         let or_val = self
             .builder
-            .build_or(t_val, immed, &format!("ori_{}_res", self.count_uniq));
+            .build_or(s_val, immed, &format!("ori_{}_res", self.count_uniq));
 
-        self.builder.build_store(s_reg, or_val);
+        self.builder.build_store(t_reg, or_val);
 
         self.instr_finished_emitting();
     }
@@ -852,9 +853,9 @@ pub unsafe extern "C" fn tb_mem_read(
             *err = 0;
             v
         }
-        Err(_) => {
+        Err(e) => {
             *err = 1;
-            0
+            panic!("tb_mem_read err: {:#08x?}", e);
         }
     }
 }
@@ -868,6 +869,9 @@ pub unsafe extern "C" fn tb_mem_write(
 ) -> bool {
     assert_ne!(std::ptr::null_mut(), bus);
     let wv = (*bus).write(addr, size, value);
+    if let Err(e) = wv {
+        panic!("tb_mem_write err: {:#08x?}", e);
+    }
     match wv {
         Ok(_) => true,
         Err(_) => false,

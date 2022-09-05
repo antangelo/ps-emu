@@ -51,7 +51,7 @@ void print_int(int d)
 
 int main()
 {
-    int f = fibonnaci(25);
+    int f = fibonnaci(31);
 //    print_int(f);
 //    print("\r\n");
 
