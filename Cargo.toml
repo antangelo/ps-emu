@@ -17,6 +17,9 @@ path = "src/bin/disassemble/main.rs"
 name = "mips-run-elf"
 path = "src/bin/mips-run-elf/main.rs"
 
+[profile.release]
+debug = true
+
 [dependencies]
 num = "0.4"
 num-derive = "0.3"

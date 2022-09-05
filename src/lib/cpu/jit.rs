@@ -10,7 +10,7 @@ pub fn new_tb<'ctx>(
 ) -> Result<TranslationBlock<'ctx>, String> {
     let module = ctx.create_module(&format!("tb_mod_{}", id));
     let ee = module
-        .create_jit_execution_engine(inkwell::OptimizationLevel::Aggressive)
+        .create_jit_execution_engine(inkwell::OptimizationLevel::None)
         .map_err(|e| e.to_string())?;
     let builder = ctx.create_builder();
 
@@ -913,7 +913,6 @@ pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), St
     let elapsed = (elapsed_micros as f64) / 1_000_000.0;
 
     println!("CpuState: {:x?}", state);
-    println!("pc: {:#08x}", state.pc);
     println!("elapsed time: {}", elapsed);
     println!("icount: {}", icount);
     println!("MIPS: {}", (icount as f64) / elapsed / 1_000_000.0);
