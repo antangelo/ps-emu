@@ -1,6 +1,7 @@
 use object::{Object, ObjectSection};
+use libpsx::cpu::bus::BusDevice;
 
-fn mips_disassemble_bus(bus: &mut libpsx::cpu::bus::Bus, addr: u32, size: usize) {
+fn mips_disassemble_bus(bus: &mut dyn BusDevice, addr: u32, size: usize) {
     for i in 0..size {
         let instr = bus.read(addr + 4 * (i as u32), 32).unwrap();
 
@@ -21,7 +22,7 @@ fn mips_disassemble_bus(bus: &mut libpsx::cpu::bus::Bus, addr: u32, size: usize)
     }
 }
 
-fn mips_load_text(bus: &mut libpsx::cpu::bus::Bus, addr: u32, buf: &[u8]) {
+fn mips_load_text(bus: &mut dyn BusDevice, addr: u32, buf: &[u8]) {
     let len = buf.len();
 
     for i in 0..len {
@@ -41,7 +42,7 @@ fn main() {
 
     let ram = Box::new(libpsx::mem::memory::RAM::new(1 << 25));
 
-    let mut bus = libpsx::cpu::bus::Bus::default();
+    let mut bus = libpsx::cpu::bus_vec::VecBus::default();
     bus.endianness = obj.endianness();
     bus.map(0x0, 1 << 25, ram);
 

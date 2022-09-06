@@ -1,8 +1,10 @@
 use super::{decode, opcode};
+use crate::cpu::bus::BusDevice;
 use inkwell::values::AnyValue;
 
+type BusType = crate::cpu::bus_vec::VecBus;
 type TbDynFunc =
-    unsafe extern "C" fn(state: *mut CpuState, bus: *mut super::bus::Bus, scratch: *mut u32);
+    unsafe extern "C" fn(state: *mut CpuState, bus: *mut BusType, *mut u32);
 
 pub fn new_tb<'ctx>(
     id: u64,
@@ -116,7 +118,7 @@ impl<'ctx> TbManager<'ctx> {
         &mut self,
         ctx: &'ctx inkwell::context::Context,
         addr: u32,
-        bus: &mut super::bus::Bus,
+        bus: &mut dyn BusDevice,
     ) -> Result<&TranslationBlock<'ctx>, String> {
         if !self.tb_cache.contains_key(&addr) {
             let mut tb = new_tb(addr as u64, ctx)?;
@@ -772,7 +774,7 @@ impl<'ctx> TranslationBlock<'ctx> {
         }
     }
 
-    pub fn translate(&mut self, bus: &mut super::bus::Bus, pc: u32) -> Result<u32, String> {
+    pub fn translate(&mut self, bus: &mut dyn BusDevice, pc: u32) -> Result<u32, String> {
         let mut addr = pc;
         while !self.finalized {
             let instr_raw = bus.read(addr, 32).map_err(|_| "Failed to read instr")?;
@@ -841,13 +843,11 @@ impl Default for CpuState {
 
 #[no_mangle]
 pub unsafe extern "C" fn tb_mem_read(
-    bus: *mut super::bus::Bus,
+    bus: *mut BusType,
     addr: u32,
     size: u32,
     err: *mut u32,
 ) -> u32 {
-    assert_ne!(std::ptr::null_mut(), bus);
-    assert_ne!(std::ptr::null_mut(), err);
     match (*bus).read(addr, size) {
         Ok(v) => {
             *err = 0;
@@ -862,12 +862,11 @@ pub unsafe extern "C" fn tb_mem_read(
 
 #[no_mangle]
 pub unsafe extern "C" fn tb_mem_write(
-    bus: *mut super::bus::Bus,
+    bus: *mut BusType,
     addr: u32,
     size: u32,
     value: u32,
 ) -> bool {
-    assert_ne!(std::ptr::null_mut(), bus);
     let wv = (*bus).write(addr, size, value);
     if let Err(e) = wv {
         panic!("tb_mem_write err: {:#08x?}", e);
@@ -878,7 +877,7 @@ pub unsafe extern "C" fn tb_mem_write(
     }
 }
 
-pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), String> {
+pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let ctx = inkwell::context::Context::create();
     let mut tb_mgr = TbManager::new();
     let mut scratch: u32 = 0;
@@ -899,9 +898,9 @@ pub fn execute(bus: &mut super::bus::Bus, state: &mut CpuState) -> Result<(), St
         if let Some(func) = tb.tb_func.as_ref() {
             unsafe {
                 func.call(
-                    core::ptr::addr_of_mut!(*state),
-                    core::ptr::addr_of_mut!(*bus),
-                    core::ptr::addr_of_mut!(scratch),
+                    state,
+                    bus,
+                    &mut scratch,
                 );
             }
         } else {

@@ -1,6 +1,7 @@
 use object::{Object, ObjectSection};
+use libpsx::cpu::bus::BusDevice;
 
-fn load_section(bus: &mut libpsx::cpu::bus::Bus, addr: u32, buf: &[u8]) {
+fn load_section(bus: &mut dyn BusDevice, addr: u32, buf: &[u8]) {
     let len = buf.len();
 
     for i in 0..len {
@@ -44,7 +45,7 @@ fn main() {
     let ram = Box::new(libpsx::mem::memory::RAM::new(1 << 25));
     let uart = Box::new(DiscountUart);
 
-    let mut bus = libpsx::cpu::bus::Bus::default();
+    let mut bus = libpsx::cpu::bus_vec::VecBus::default();
     bus.endianness = obj.endianness();
     bus.map(0x0, 1 << 25, ram);
     bus.map(0x1fd003f8, 0x10, uart);

@@ -32,6 +32,7 @@ impl bus::BusDevice for RAM {
     }
 
     fn read(&mut self, addr: u32, size: u32) -> Result<u32, MemAccessError> {
+        assert!(addr < self.size);
         unsafe {
             let mem: *const u8 = self.mem.as_ptr().add(addr as usize);
             match size {
@@ -47,6 +48,7 @@ impl bus::BusDevice for RAM {
     }
 
     fn write(&mut self, addr: u32, size: u32, value: u32) -> Result<(), MemAccessError> {
+        assert!(addr < self.size);
         unsafe {
             let mem: *mut u8 = self.mem.as_mut_ptr().add(addr as usize);
             match size {
