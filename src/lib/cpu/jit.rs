@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use super::{decode, opcode};
 use crate::cpu::bus::BusDevice;
 use inkwell::values::AnyValue;
@@ -104,13 +106,15 @@ pub fn new_tb<'ctx>(
 }
 
 struct TbManager<'ctx> {
-    tb_cache: std::collections::HashMap<u32, TranslationBlock<'ctx>>,
+    vec_cache: Vec<Option<TranslationBlock<'ctx>>>,
+    size: usize,
 }
 
 impl<'ctx> TbManager<'ctx> {
-    fn new() -> Self {
+    fn new(size: usize) -> Self {
         Self {
-            tb_cache: std::collections::HashMap::default(),
+            vec_cache: std::iter::repeat_with(|| Option::<TranslationBlock<'ctx>>::None).take(size).collect(),
+            size,
         }
     }
 
@@ -118,17 +122,20 @@ impl<'ctx> TbManager<'ctx> {
         &mut self,
         ctx: &'ctx inkwell::context::Context,
         addr: u32,
-        bus: &mut dyn BusDevice,
+        bus: &mut impl BusDevice,
     ) -> Result<&TranslationBlock<'ctx>, String> {
-        if !self.tb_cache.contains_key(&addr) {
+        assert!((addr as usize) < self.size);
+        if let None = self.vec_cache.get(addr as usize).unwrap() {
             let mut tb = new_tb(addr as u64, ctx)?;
             tb.translate(bus, addr)?;
             tb.finalize();
-            self.tb_cache.insert(addr, tb);
+            self.vec_cache[addr as usize] = Some(tb);
         }
 
-        let tb = self.tb_cache.get(&addr);
-        Ok(tb.unwrap())
+        let x = self.vec_cache.get(addr as usize).unwrap();
+        Ok(x
+           .as_ref()
+           .unwrap())
     }
 }
 
@@ -879,7 +886,7 @@ pub unsafe extern "C" fn tb_mem_write(
 
 pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let ctx = inkwell::context::Context::create();
-    let mut tb_mgr = TbManager::new();
+    let mut tb_mgr = TbManager::new(1 << 25);
     let mut scratch: u32 = 0;
     let mut prev_pc = 0;
     let mut icount = 0;
