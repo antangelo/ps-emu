@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use super::{decode, opcode};
 use crate::cpu::bus::BusDevice;
 use inkwell::values::AnyValue;
@@ -710,6 +708,11 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     fn emit_mflo(&mut self, instr: &decode::MipsRInstr) {
+        if self.finalized || instr.d_reg == 0 {
+            self.instr_finished_emitting();
+            return;
+        }
+
         let d_reg = self.gep_gp_register(instr.d_reg, &format!("mflo_{}_d_reg", self.count_uniq));
         let lo_ptr = self.gep_lo(&format!("mflo_{}_lo_ptr", self.count_uniq));
         let lo = self.builder.build_load(lo_ptr, &format!("mflo_{}_lo", self.count_uniq));
@@ -719,8 +722,12 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     fn emit_mfhi(&mut self, instr: &decode::MipsRInstr) {
+        if self.finalized || instr.d_reg == 0 {
+            self.instr_finished_emitting();
+        }
+
         let d_reg = self.gep_gp_register(instr.d_reg, &format!("mfhi_{}_d_reg", self.count_uniq));
-        let hi_ptr = self.gep_lo(&format!("mfhi_{}_hi_ptr", self.count_uniq));
+        let hi_ptr = self.gep_hi(&format!("mfhi_{}_hi_ptr", self.count_uniq));
         let hi = self.builder.build_load(hi_ptr, &format!("mfhi_{}_hi", self.count_uniq));
         self.builder.build_store(d_reg, hi);
 
@@ -742,6 +749,85 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
     }
 
+    fn emit_mult(&mut self, instr: &decode::MipsRInstr) {
+        let s_reg = self.get_gpr_value(instr.s_reg, &format!("mult_{}_s", self.count_uniq));
+        let t_reg = self.get_gpr_value(instr.t_reg, &format!("mult_{}_t", self.count_uniq));
+
+        let i64_type = self.ctx.i64_type();
+        let s_ext = self.builder.build_int_s_extend(s_reg, i64_type, &format!("mult_{}_s_ext", self.count_uniq));
+        let t_ext = self.builder.build_int_s_extend(t_reg, i64_type, &format!("mult_{}_t_ext", self.count_uniq));
+
+        let mult_v = self.builder.build_int_mul(s_ext, t_ext, &format!("mult_{}_v", self.count_uniq));
+
+        let i32_type = self.ctx.i32_type();
+        let mult_hi = self.builder.build_right_shift(mult_v, i64_type.const_int(32, false), false, &format!("mult_{}_hi", self.count_uniq));
+        let hi_reg = self.gep_hi(&format!("mult_{}_hi_reg", self.count_uniq));
+        let mult_hi_32 = self.builder.build_int_truncate(mult_hi, i32_type, &format!("mult_{}_hi_cast", self.count_uniq));
+        self.builder.build_store(hi_reg, mult_hi_32);
+
+        let mult_lo = self.builder.build_int_truncate(mult_v, i32_type, &format!("mult_{}_lo", self.count_uniq));
+        let lo_reg = self.gep_lo(&format!("mult_{}_lo_reg", self.count_uniq));
+        self.builder.build_store(lo_reg, mult_lo);
+
+        self.instr_finished_emitting();
+    }
+
+    fn emit_slti(&mut self, instr: &decode::MipsIInstr) {
+        if instr.t_reg == 0 {
+            self.instr_finished_emitting();
+            return;
+        }
+
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("slti_{}_s", self.count_uniq));
+        
+        let i32_type = self.ctx.i32_type();
+        let immed = i32_type.const_int(((instr.immediate as i16) as i32) as u64, true);
+
+        let cmp_val = self.builder.build_int_compare(inkwell::IntPredicate::SLT, s_val, immed, &format!("slti_{}_cmp", self.count_uniq));
+        let cmp_zext = self.builder.build_int_z_extend(cmp_val, i32_type, &format!("slti_{}_zext", self.count_uniq));
+        let t_reg = self.gep_gp_register(instr.t_reg, &format!("slti_{}_t_reg", self.count_uniq));
+
+        self.builder.build_store(t_reg, cmp_zext);
+        self.instr_finished_emitting();
+    }
+
+    fn emit_sltiu(&mut self, instr: &decode::MipsIInstr) {
+        if instr.t_reg == 0 {
+            self.instr_finished_emitting();
+            return;
+        }
+
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("sltiu_{}_s", self.count_uniq));
+        
+        let i32_type = self.ctx.i32_type();
+        let immed = i32_type.const_int(((instr.immediate as i16) as i32) as u64, true);
+
+        let cmp_val = self.builder.build_int_compare(inkwell::IntPredicate::ULT, s_val, immed, &format!("sltiu_{}_cmp", self.count_uniq));
+        let cmp_zext = self.builder.build_int_z_extend(cmp_val, i32_type, &format!("sltiu_{}_zext", self.count_uniq));
+        let t_reg = self.gep_gp_register(instr.t_reg, &format!("sltiu_{}_t_reg", self.count_uniq));
+
+        self.builder.build_store(t_reg, cmp_zext);
+        self.instr_finished_emitting();
+    }
+
+    fn emit_sltu(&mut self, instr: &decode::MipsRInstr) {
+        if instr.d_reg == 0 {
+            self.instr_finished_emitting();
+            return;
+        }
+
+        let i32_type = self.ctx.i32_type();
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("sltu_{}_s", self.count_uniq));
+        let t_val = self.get_gpr_value(instr.t_reg, &format!("sltu_{}_t", self.count_uniq));
+        let cmp_val = self.builder.build_int_compare(inkwell::IntPredicate::ULT, s_val, t_val, &format!("sltu_{}_cmp", self.count_uniq));
+        let cmp_zext = self.builder.build_int_z_extend(cmp_val, i32_type, &format!("sltu_{}_zext", self.count_uniq));
+
+        let d_reg = self.gep_gp_register(instr.d_reg, &format!("sltu_{}_d", self.count_uniq));
+        self.builder.build_store(d_reg, cmp_zext);
+
+        self.instr_finished_emitting();
+    }
+
     fn emit_r_instr(&mut self, instr: &decode::MipsRInstr) {
         match instr.function {
             opcode::MipsFunction::Sll => self.emit_sll(instr),
@@ -752,6 +838,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsFunction::Mflo => self.emit_mflo(instr),
             opcode::MipsFunction::Mfhi => self.emit_mfhi(instr),
             opcode::MipsFunction::DivU => self.emit_divu(instr),
+            opcode::MipsFunction::Mult => self.emit_mult(instr),
+            opcode::MipsFunction::Sltu => self.emit_sltu(instr),
             _ => panic!("Not implemented: {}", instr.function),
         }
     }
@@ -769,6 +857,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsOpcode::Lw => self.emit_lw(instr),
             opcode::MipsOpcode::Sb => self.emit_sb(instr),
             opcode::MipsOpcode::Sw => self.emit_sw(instr),
+            opcode::MipsOpcode::SltI => self.emit_slti(instr),
+            opcode::MipsOpcode::SltIU => self.emit_sltiu(instr),
             _ => panic!("Not implemented: {}", instr.opcode),
         }
     }

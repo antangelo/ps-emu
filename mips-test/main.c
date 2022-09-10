@@ -1,9 +1,9 @@
-int factorial(int n)
-{
-    if (n == 0) return 1;
-
-    return n * factorial(n - 1);
-}
+//int factorial(int n)
+//{
+//    if (n == 0) return 1;
+//
+//    return n * factorial(n - 1);
+//}
 
 int fibonnaci(int n)
 {
@@ -25,6 +25,7 @@ void format_uint_to_str(unsigned int num, unsigned int base, char *bf)
 		dgt = num / d;
 		num %= d;
 		d /= base;
+
 		if (n || dgt > 0 || d == 0) {
 			*bf++ = ((dgt) + ((dgt) < 10 ? '0' : 'a' - 10));
 			++n;
@@ -52,10 +53,9 @@ void print_int(int d)
 int main()
 {
     int f = fibonnaci(31);
-//    print_int(f);
-//    print("\r\n");
 
-    print("Hello world!\r\n");
+    print_int(f);
+    print("\r\n");
 
     return 0;
 }

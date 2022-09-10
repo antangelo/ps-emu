@@ -101,7 +101,7 @@ pub enum MipsFunction {
     Xor = 0x26,
     Nor = 0x27,
     And = 0x28,
-    Sltu = 0x29,
+    Sltu = 0x2b,
     Slt = 0x2c,
 }
 
