@@ -56,6 +56,7 @@ int main()
 
     print_int(f);
     print("\r\n");
+    print("Test program!\r\n");
 
     return 0;
 }

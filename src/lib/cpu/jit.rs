@@ -110,8 +110,11 @@ struct TbManager<'ctx> {
 
 impl<'ctx> TbManager<'ctx> {
     fn new(size: usize) -> Self {
+        let mut cache = Vec::new();
+        cache.resize_with(size, || None);
+
         Self {
-            vec_cache: std::iter::repeat_with(|| Option::<TranslationBlock<'ctx>>::None).take(size).collect(),
+            vec_cache: cache,
             size,
         }
     }

@@ -2,7 +2,6 @@ use crate::cpu::{bus, bus::MemAccessError, bus::MemAccessErrorType};
 use object::Endian;
 
 pub struct RAM {
-    endianness: object::Endianness,
     mem: Box<[u8]>,
     size: u32,
 }
@@ -12,14 +11,13 @@ impl RAM {
         // Endianness is managed on the bus level, but it is convenient
         // to use it to read bytes into u32/u16s as well
         // so we use the system endianess to do it.
-        let endianness = if object::NativeEndian.is_little_endian() {
+        let _endianness = if object::NativeEndian.is_little_endian() {
             object::Endianness::Little
         } else {
             object::Endianness::Big
         };
 
         RAM {
-            endianness,
             mem: vec![0; size as usize].into_boxed_slice(),
             size,
         }
@@ -37,8 +35,8 @@ impl bus::BusDevice for RAM {
             let mem: *const u8 = self.mem.as_ptr().add(addr as usize);
             match size {
                 8 => Ok(*mem as u32),
-                16 => Ok(self.endianness.read_u16(*(mem as *const u16)) as u32),
-                32 => Ok(self.endianness.read_u32(*(mem as *const u32))),
+                16 => Ok(*(mem as *const u16) as u32),
+                32 => Ok(*(mem as *const u32)),
                 _ => Err(MemAccessError {
                     addr,
                     err: MemAccessErrorType::BadSize,
@@ -56,10 +54,10 @@ impl bus::BusDevice for RAM {
                     *mem = value as u8;
                 },
                 16 => {
-                    *(mem as *mut u16) = self.endianness.write_u16(value as u16);
+                    *(mem as *mut u16) = value as u16;
                 },
                 32 => {
-                    *(mem as *mut u32) = self.endianness.write_u32(value);
+                    *(mem as *mut u32) = value;
                 },
                 _ => {
                     return Err(MemAccessError {
