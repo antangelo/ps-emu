@@ -1,6 +1,7 @@
 use super::{decode, opcode};
 use crate::cpu::bus::BusDevice;
 use inkwell::values::AnyValue;
+use std::rc::Rc;
 
 type BusType = crate::cpu::bus_vec::VecBus;
 type TbDynFunc =
@@ -104,17 +105,14 @@ pub fn new_tb<'ctx>(
 }
 
 struct TbManager<'ctx> {
-    vec_cache: Vec<Option<TranslationBlock<'ctx>>>,
+    vec_cache: Vec<Option<Rc<TranslationBlock<'ctx>>>>,
     size: usize,
 }
 
 impl<'ctx> TbManager<'ctx> {
     fn new(size: usize) -> Self {
-        let mut cache = Vec::new();
-        cache.resize_with(size, || None);
-
         Self {
-            vec_cache: cache,
+            vec_cache: vec![None; size],
             size,
         }
     }
@@ -124,19 +122,19 @@ impl<'ctx> TbManager<'ctx> {
         ctx: &'ctx inkwell::context::Context,
         addr: u32,
         bus: &mut impl BusDevice,
-    ) -> Result<&TranslationBlock<'ctx>, String> {
+    ) -> Result<Rc<TranslationBlock<'ctx>>, String> {
         assert!((addr as usize) < self.size);
         if let None = self.vec_cache.get(addr as usize).unwrap() {
             let mut tb = new_tb(addr as u64, ctx)?;
             tb.translate(bus, addr)?;
             tb.finalize();
-            self.vec_cache[addr as usize] = Some(tb);
+            let tb_rc = Rc::new(tb);
+            self.vec_cache[addr as usize] = Some(tb_rc.clone());
+            return Ok(tb_rc);
         }
 
         let x = self.vec_cache.get(addr as usize).unwrap();
-        Ok(x
-           .as_ref()
-           .unwrap())
+        Ok(x.clone().unwrap())
     }
 }
 
