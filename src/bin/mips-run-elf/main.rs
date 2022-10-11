@@ -1,5 +1,5 @@
-use object::{Object, ObjectSection};
 use libpsx::cpu::bus::BusDevice;
+use object::{Object, ObjectSection};
 
 fn load_section(bus: &mut dyn BusDevice, addr: u32, buf: &[u8]) {
     let len = buf.len();

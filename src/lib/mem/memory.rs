@@ -52,13 +52,13 @@ impl bus::BusDevice for RAM {
             match size {
                 8 => {
                     *mem = value as u8;
-                },
+                }
                 16 => {
                     *(mem as *mut u16) = value as u16;
-                },
+                }
                 32 => {
                     *(mem as *mut u32) = value;
-                },
+                }
                 _ => {
                     return Err(MemAccessError {
                         addr,
@@ -74,10 +74,12 @@ impl bus::BusDevice for RAM {
 
 #[cfg(test)]
 mod test {
+    use super::bus::BusDevice;
+
     #[test]
     fn ram_test_generic() {
-        let ram = Box::new(super::RAM::default());
-        let mut bus = super::bus::Bus::default();
+        let ram = Box::new(super::RAM::new(1 << 25));
+        let mut bus = crate::cpu::bus_vec::VecBus::default();
 
         bus.map(0x0, 0x1000, ram);
 

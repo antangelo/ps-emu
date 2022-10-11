@@ -1,5 +1,5 @@
+use super::bus::{BusDevice, MemAccessError, MemAccessErrorType};
 use object::Endian;
-use super::bus::{MemAccessError, MemAccessErrorType, BusDevice};
 
 struct BusEntry {
     addr: u32,
@@ -58,8 +58,7 @@ impl BTreeBus {
 }
 
 impl BusDevice for BTreeBus {
-    fn validate(&mut self, _base_addr: u32, _size: u32) {
-    }
+    fn validate(&mut self, _base_addr: u32, _size: u32) {}
 
     fn read(&mut self, addr: u32, size: u32) -> Result<u32, MemAccessError> {
         let ent = self.bus_lookup(addr)?;

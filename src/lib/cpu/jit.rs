@@ -4,8 +4,7 @@ use inkwell::values::AnyValue;
 use std::rc::Rc;
 
 type BusType = crate::cpu::bus_vec::VecBus;
-type TbDynFunc =
-    unsafe extern "C" fn(state: *mut CpuState, bus: *mut BusType, *mut u32);
+type TbDynFunc = unsafe extern "C" fn(state: *mut CpuState, bus: *mut BusType, *mut u32);
 
 pub fn new_tb<'ctx>(
     id: u64,
@@ -105,15 +104,13 @@ pub fn new_tb<'ctx>(
 }
 
 struct TbManager<'ctx> {
-    vec_cache: Vec<Option<Rc<TranslationBlock<'ctx>>>>,
-    size: usize,
+    trie: super::trie::Trie<TranslationBlock<'ctx>>,
 }
 
 impl<'ctx> TbManager<'ctx> {
-    fn new(size: usize) -> Self {
+    fn new(_size: usize) -> Self {
         Self {
-            vec_cache: vec![None; size],
-            size,
+            trie: super::trie::Trie::default(),
         }
     }
 
@@ -123,18 +120,20 @@ impl<'ctx> TbManager<'ctx> {
         addr: u32,
         bus: &mut impl BusDevice,
     ) -> Result<Rc<TranslationBlock<'ctx>>, String> {
-        assert!((addr as usize) < self.size);
-        if let None = self.vec_cache.get(addr as usize).unwrap() {
-            let mut tb = new_tb(addr as u64, ctx)?;
-            tb.translate(bus, addr)?;
-            tb.finalize();
-            let tb_rc = Rc::new(tb);
-            self.vec_cache[addr as usize] = Some(tb_rc.clone());
-            return Ok(tb_rc);
+        if let Some(tb) = self.trie.lookup(addr) {
+            return Ok(tb.clone());
         }
 
-        let x = self.vec_cache.get(addr as usize).unwrap();
-        Ok(x.clone().unwrap())
+        let mut tb = new_tb(addr as u64, ctx)?;
+        tb.translate(bus, addr)?;
+        tb.finalize();
+        let tb_rc = Rc::new(tb);
+        self.trie.insert(addr, tb_rc.clone())?;
+        return Ok(tb_rc);
+    }
+
+    fn invalidate(&mut self, addr: u32) {
+        self.trie.invalidate(addr);
     }
 }
 
@@ -323,7 +322,7 @@ impl<'ctx> TranslationBlock<'ctx> {
                 pc_val.into_int_value(),
                 target_v,
                 &format!("beq_{}_next_pc", arg.count),
-                );
+            );
             tb.builder.build_store(pc_ptr, next_pc);
             tb.builder.build_return(None);
         }
@@ -345,7 +344,7 @@ impl<'ctx> TranslationBlock<'ctx> {
                 pc_val.into_int_value(),
                 target_v,
                 &format!("beq_{}_next_pc", arg.count),
-                );
+            );
             tb.builder.build_store(pc_ptr, next_pc);
             tb.builder.build_return(None);
         }
@@ -716,7 +715,9 @@ impl<'ctx> TranslationBlock<'ctx> {
 
         let d_reg = self.gep_gp_register(instr.d_reg, &format!("mflo_{}_d_reg", self.count_uniq));
         let lo_ptr = self.gep_lo(&format!("mflo_{}_lo_ptr", self.count_uniq));
-        let lo = self.builder.build_load(lo_ptr, &format!("mflo_{}_lo", self.count_uniq));
+        let lo = self
+            .builder
+            .build_load(lo_ptr, &format!("mflo_{}_lo", self.count_uniq));
         self.builder.build_store(d_reg, lo);
 
         self.instr_finished_emitting();
@@ -729,7 +730,9 @@ impl<'ctx> TranslationBlock<'ctx> {
 
         let d_reg = self.gep_gp_register(instr.d_reg, &format!("mfhi_{}_d_reg", self.count_uniq));
         let hi_ptr = self.gep_hi(&format!("mfhi_{}_hi_ptr", self.count_uniq));
-        let hi = self.builder.build_load(hi_ptr, &format!("mfhi_{}_hi", self.count_uniq));
+        let hi = self
+            .builder
+            .build_load(hi_ptr, &format!("mfhi_{}_hi", self.count_uniq));
         self.builder.build_store(d_reg, hi);
 
         self.instr_finished_emitting();
@@ -739,11 +742,19 @@ impl<'ctx> TranslationBlock<'ctx> {
         let s_reg = self.get_gpr_value(instr.s_reg, &format!("divu_{}_s", self.count_uniq));
         let t_reg = self.get_gpr_value(instr.t_reg, &format!("divu_{}_t", self.count_uniq));
 
-        let div = self.builder.build_int_unsigned_div(s_reg, t_reg, &format!("divu_{}_quotient", self.count_uniq));
+        let div = self.builder.build_int_unsigned_div(
+            s_reg,
+            t_reg,
+            &format!("divu_{}_quotient", self.count_uniq),
+        );
         let lo = self.gep_lo(&format!("divu_{}_lo", self.count_uniq));
         self.builder.build_store(lo, div);
 
-        let modulo = self.builder.build_int_unsigned_rem(s_reg, t_reg, &format!("divu_{}_mod", self.count_uniq));
+        let modulo = self.builder.build_int_unsigned_rem(
+            s_reg,
+            t_reg,
+            &format!("divu_{}_mod", self.count_uniq),
+        );
         let hi = self.gep_hi(&format!("divu_{}_hi", self.count_uniq));
         self.builder.build_store(hi, modulo);
 
@@ -755,18 +766,41 @@ impl<'ctx> TranslationBlock<'ctx> {
         let t_reg = self.get_gpr_value(instr.t_reg, &format!("mult_{}_t", self.count_uniq));
 
         let i64_type = self.ctx.i64_type();
-        let s_ext = self.builder.build_int_s_extend(s_reg, i64_type, &format!("mult_{}_s_ext", self.count_uniq));
-        let t_ext = self.builder.build_int_s_extend(t_reg, i64_type, &format!("mult_{}_t_ext", self.count_uniq));
+        let s_ext = self.builder.build_int_s_extend(
+            s_reg,
+            i64_type,
+            &format!("mult_{}_s_ext", self.count_uniq),
+        );
+        let t_ext = self.builder.build_int_s_extend(
+            t_reg,
+            i64_type,
+            &format!("mult_{}_t_ext", self.count_uniq),
+        );
 
-        let mult_v = self.builder.build_int_mul(s_ext, t_ext, &format!("mult_{}_v", self.count_uniq));
+        let mult_v =
+            self.builder
+                .build_int_mul(s_ext, t_ext, &format!("mult_{}_v", self.count_uniq));
 
         let i32_type = self.ctx.i32_type();
-        let mult_hi = self.builder.build_right_shift(mult_v, i64_type.const_int(32, false), false, &format!("mult_{}_hi", self.count_uniq));
+        let mult_hi = self.builder.build_right_shift(
+            mult_v,
+            i64_type.const_int(32, false),
+            false,
+            &format!("mult_{}_hi", self.count_uniq),
+        );
         let hi_reg = self.gep_hi(&format!("mult_{}_hi_reg", self.count_uniq));
-        let mult_hi_32 = self.builder.build_int_truncate(mult_hi, i32_type, &format!("mult_{}_hi_cast", self.count_uniq));
+        let mult_hi_32 = self.builder.build_int_truncate(
+            mult_hi,
+            i32_type,
+            &format!("mult_{}_hi_cast", self.count_uniq),
+        );
         self.builder.build_store(hi_reg, mult_hi_32);
 
-        let mult_lo = self.builder.build_int_truncate(mult_v, i32_type, &format!("mult_{}_lo", self.count_uniq));
+        let mult_lo = self.builder.build_int_truncate(
+            mult_v,
+            i32_type,
+            &format!("mult_{}_lo", self.count_uniq),
+        );
         let lo_reg = self.gep_lo(&format!("mult_{}_lo_reg", self.count_uniq));
         self.builder.build_store(lo_reg, mult_lo);
 
@@ -780,12 +814,21 @@ impl<'ctx> TranslationBlock<'ctx> {
         }
 
         let s_val = self.get_gpr_value(instr.s_reg, &format!("slti_{}_s", self.count_uniq));
-        
+
         let i32_type = self.ctx.i32_type();
         let immed = i32_type.const_int(((instr.immediate as i16) as i32) as u64, true);
 
-        let cmp_val = self.builder.build_int_compare(inkwell::IntPredicate::SLT, s_val, immed, &format!("slti_{}_cmp", self.count_uniq));
-        let cmp_zext = self.builder.build_int_z_extend(cmp_val, i32_type, &format!("slti_{}_zext", self.count_uniq));
+        let cmp_val = self.builder.build_int_compare(
+            inkwell::IntPredicate::SLT,
+            s_val,
+            immed,
+            &format!("slti_{}_cmp", self.count_uniq),
+        );
+        let cmp_zext = self.builder.build_int_z_extend(
+            cmp_val,
+            i32_type,
+            &format!("slti_{}_zext", self.count_uniq),
+        );
         let t_reg = self.gep_gp_register(instr.t_reg, &format!("slti_{}_t_reg", self.count_uniq));
 
         self.builder.build_store(t_reg, cmp_zext);
@@ -799,12 +842,21 @@ impl<'ctx> TranslationBlock<'ctx> {
         }
 
         let s_val = self.get_gpr_value(instr.s_reg, &format!("sltiu_{}_s", self.count_uniq));
-        
+
         let i32_type = self.ctx.i32_type();
         let immed = i32_type.const_int(((instr.immediate as i16) as i32) as u64, true);
 
-        let cmp_val = self.builder.build_int_compare(inkwell::IntPredicate::ULT, s_val, immed, &format!("sltiu_{}_cmp", self.count_uniq));
-        let cmp_zext = self.builder.build_int_z_extend(cmp_val, i32_type, &format!("sltiu_{}_zext", self.count_uniq));
+        let cmp_val = self.builder.build_int_compare(
+            inkwell::IntPredicate::ULT,
+            s_val,
+            immed,
+            &format!("sltiu_{}_cmp", self.count_uniq),
+        );
+        let cmp_zext = self.builder.build_int_z_extend(
+            cmp_val,
+            i32_type,
+            &format!("sltiu_{}_zext", self.count_uniq),
+        );
         let t_reg = self.gep_gp_register(instr.t_reg, &format!("sltiu_{}_t_reg", self.count_uniq));
 
         self.builder.build_store(t_reg, cmp_zext);
@@ -820,8 +872,17 @@ impl<'ctx> TranslationBlock<'ctx> {
         let i32_type = self.ctx.i32_type();
         let s_val = self.get_gpr_value(instr.s_reg, &format!("sltu_{}_s", self.count_uniq));
         let t_val = self.get_gpr_value(instr.t_reg, &format!("sltu_{}_t", self.count_uniq));
-        let cmp_val = self.builder.build_int_compare(inkwell::IntPredicate::ULT, s_val, t_val, &format!("sltu_{}_cmp", self.count_uniq));
-        let cmp_zext = self.builder.build_int_z_extend(cmp_val, i32_type, &format!("sltu_{}_zext", self.count_uniq));
+        let cmp_val = self.builder.build_int_compare(
+            inkwell::IntPredicate::ULT,
+            s_val,
+            t_val,
+            &format!("sltu_{}_cmp", self.count_uniq),
+        );
+        let cmp_zext = self.builder.build_int_z_extend(
+            cmp_val,
+            i32_type,
+            &format!("sltu_{}_zext", self.count_uniq),
+        );
 
         let d_reg = self.gep_gp_register(instr.d_reg, &format!("sltu_{}_d", self.count_uniq));
         self.builder.build_store(d_reg, cmp_zext);
@@ -883,12 +944,12 @@ impl<'ctx> TranslationBlock<'ctx> {
                 decode::MipsInstr::IType(i) => self.emit_i_instr(&i),
                 decode::MipsInstr::JType(j) => self.emit_j_instr(&j),
                 _ => {
-                    self.emit_r_instr(&decode::MipsRInstr{
+                    self.emit_r_instr(&decode::MipsRInstr {
                         s_reg: 0,
                         t_reg: 0,
                         d_reg: 0,
                         shamt: 0,
-                        function: opcode::MipsFunction::Sll
+                        function: opcode::MipsFunction::Sll,
                     });
                     //return Err(format!("Invalid instruction {:#08x}: {:#08x} {}", addr, instr_raw, instr));
                 }
@@ -959,12 +1020,7 @@ pub unsafe extern "C" fn tb_mem_read(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn tb_mem_write(
-    bus: *mut BusType,
-    addr: u32,
-    size: u32,
-    value: u32,
-) -> bool {
+pub unsafe extern "C" fn tb_mem_write(bus: *mut BusType, addr: u32, size: u32, value: u32) -> bool {
     let wv = (*bus).write(addr, size, value);
     if let Err(e) = wv {
         panic!("tb_mem_write err: {:#08x?}", e);
@@ -982,6 +1038,10 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let mut prev_pc = 0;
     let mut icount = 0;
     let now = std::time::Instant::now();
+    let mut prev_elapsed: u128 = 0;
+    
+    let mut mips_avg: f64 = 0.0;
+    let mut mips_avg_count: u128 = 0;
 
     loop {
         if state.pc == prev_pc {
@@ -990,29 +1050,38 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
 
         prev_pc = state.pc;
 
+        //tb_mgr.invalidate(prev_pc);
+
         let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
         icount += tb.count_uniq;
 
         if let Some(func) = tb.tb_func.as_ref() {
             unsafe {
-                func.call(
-                    state,
-                    bus,
-                    &mut scratch,
-                );
+                func.call(state, bus, &mut scratch);
             }
         } else {
             panic!("Failed to compile TB");
         }
+
+        if icount > 1_000_000 {
+            let elapsed_micros_tot = now.elapsed().as_micros();
+            let elapsed_micros = elapsed_micros_tot - prev_elapsed;
+            prev_elapsed = elapsed_micros_tot;
+            let elapsed = (elapsed_micros as f64) / 1_000_000.0;
+            mips_avg += (icount as f64) / elapsed / 1_000_000.0;
+            mips_avg_count += 1;
+
+            icount = 0;
+        }
     }
 
-    let elapsed_micros = now.elapsed().as_micros();
+    let elapsed_micros = now.elapsed().as_micros() - prev_elapsed;
     let elapsed = (elapsed_micros as f64) / 1_000_000.0;
 
     println!("CpuState: {:x?}", state);
     println!("elapsed time: {}", elapsed);
     println!("icount: {}", icount);
-    println!("MIPS: {}", (icount as f64) / elapsed / 1_000_000.0);
+    println!("MIPS (average): {}", mips_avg / (mips_avg_count as f64));
 
     Ok(())
 }

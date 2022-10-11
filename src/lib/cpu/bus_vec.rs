@@ -1,4 +1,4 @@
-use super::bus::{MemAccessError, MemAccessErrorType, BusDevice};
+use super::bus::{BusDevice, MemAccessError, MemAccessErrorType};
 
 struct BusEntry {
     addr: u32,
@@ -38,8 +38,7 @@ impl VecBus {
 }
 
 impl BusDevice for VecBus {
-    fn validate(&mut self, _base_addr: u32, _size: u32) {
-    }
+    fn validate(&mut self, _base_addr: u32, _size: u32) {}
 
     fn read(&mut self, addr: u32, size: u32) -> Result<u32, MemAccessError> {
         for ent in &mut self.bus {
@@ -48,7 +47,10 @@ impl BusDevice for VecBus {
             }
         }
 
-        Err(MemAccessError{ addr, err: MemAccessErrorType::NoEntry })
+        Err(MemAccessError {
+            addr,
+            err: MemAccessErrorType::NoEntry,
+        })
     }
 
     fn write(&mut self, addr: u32, size: u32, value: u32) -> Result<(), MemAccessError> {
@@ -58,6 +60,9 @@ impl BusDevice for VecBus {
             }
         }
 
-        Err(MemAccessError{ addr, err: MemAccessErrorType::NoEntry })
+        Err(MemAccessError {
+            addr,
+            err: MemAccessErrorType::NoEntry,
+        })
     }
 }
