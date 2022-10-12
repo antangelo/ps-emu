@@ -5,5 +5,3 @@ pub mod decode;
 pub mod jit;
 pub mod opcode;
 pub mod trie;
-
-pub use jit::{tb_mem_read, tb_mem_write};
