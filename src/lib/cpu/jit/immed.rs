@@ -26,7 +26,7 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     pub(super) fn emit_ori(&mut self, instr: &decode::MipsIInstr) {
-        if self.finalized || instr.s_reg == 0 {
+        if self.finalized || instr.t_reg == 0 {
             self.instr_finished_emitting();
             return;
         }
@@ -117,5 +117,81 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.builder.build_store(t_reg, immed);
 
         self.instr_finished_emitting();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::cpu::jit::harness::TestHarness;
+
+    #[test]
+    fn jit_test_addiu() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let val: u32 = 42;
+
+        th.push_instr("addiu", 0, 0, 1, val as u16, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], val);
+    }
+
+    #[test]
+    fn jit_test_ori() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let val: u32 = 42;
+
+        th.push_instr("ori", 0, 0, 1, val as u16, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], val);
+    }
+
+    #[test]
+    fn jit_test_sltiu() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("ori", 0, 0, 1, 42, 0);
+        th.push_instr("sltiu", 0, 1, 2, 100, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 42);
+        assert_eq!(state.gpr[1], 1);
+    }
+
+    #[test]
+    fn jit_test_slti() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("ori", 0, 0, 1, 42, 0);
+        th.push_instr("slti", 0, 1, 2, 100, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 42);
+        assert_eq!(state.gpr[1], 1);
+    }
+
+    #[test]
+    fn jit_test_lui() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("lui", 0, 0, 1, 0x1000, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 0x1000 << 16);
     }
 }

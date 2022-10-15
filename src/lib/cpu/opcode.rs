@@ -1,4 +1,4 @@
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, Clone, Copy)]
 pub enum MipsOpcode {
     RegisterOp = 0x00,
     RegisterImm = 0x01,
@@ -34,6 +34,38 @@ pub enum MipsOpcode {
 }
 
 impl MipsOpcode {
+    pub(crate) fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "j" => Some(MipsOpcode::J),
+            "jal" => Some(MipsOpcode::Jal),
+            "beq" => Some(MipsOpcode::Beq),
+            "bne" => Some(MipsOpcode::Bne),
+            "blez" => Some(MipsOpcode::Blez),
+            "bgtz" => Some(MipsOpcode::Bgtz),
+            "addi" => Some(MipsOpcode::AddI),
+            "addiu" => Some(MipsOpcode::AddIU),
+            "slti" => Some(MipsOpcode::SltI),
+            "sltiu" => Some(MipsOpcode::SltIU),
+            "andi" => Some(MipsOpcode::AndI),
+            "ori" => Some(MipsOpcode::OrI),
+            "xori" => Some(MipsOpcode::XorI),
+            "lui" => Some(MipsOpcode::Lui),
+            "lb" => Some(MipsOpcode::Lb),
+            "lh" => Some(MipsOpcode::Lh),
+            "lwl" => Some(MipsOpcode::Lwl),
+            "lw" => Some(MipsOpcode::Lw),
+            "lbu" => Some(MipsOpcode::Lbu),
+            "lhu" => Some(MipsOpcode::Lhu),
+            "lwr" => Some(MipsOpcode::Lwr),
+            "sb" => Some(MipsOpcode::Sb),
+            "sh" => Some(MipsOpcode::Sh),
+            "swl" => Some(MipsOpcode::Swl),
+            "sw" => Some(MipsOpcode::Sw),
+            "swr" => Some(MipsOpcode::Swr),
+            _ => None,
+        }
+    }
+
     fn to_str(&self) -> &str {
         match self {
             MipsOpcode::J => "j",
@@ -73,7 +105,7 @@ impl std::fmt::Display for MipsOpcode {
     }
 }
 
-#[derive(Debug, FromPrimitive)]
+#[derive(Debug, FromPrimitive, Clone, Copy)]
 pub enum MipsFunction {
     Sll = 0x00,
     Srl = 0x02,
@@ -106,6 +138,41 @@ pub enum MipsFunction {
 }
 
 impl MipsFunction {
+    pub(crate) fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "sll" => Some(MipsFunction::Sll),
+            "srl" => Some(MipsFunction::Srl),
+            "sra" => Some(MipsFunction::Sra),
+            "sllv" => Some(MipsFunction::Sllv),
+            "srav" => Some(MipsFunction::Srav),
+            "slrv" => Some(MipsFunction::Slrv),
+            "jr" => Some(MipsFunction::Jr),
+            "jalr" => Some(MipsFunction::Jalr),
+            "syscall" => Some(MipsFunction::Syscall),
+            "break" => Some(MipsFunction::Brk),
+            "mfhi" => Some(MipsFunction::Mfhi),
+            "mthi" => Some(MipsFunction::Mthi),
+            "mflo" => Some(MipsFunction::Mflo),
+            "mtlo" => Some(MipsFunction::Mtlo),
+            "mult" => Some(MipsFunction::Mult),
+            "multu" => Some(MipsFunction::MultU),
+            "div" => Some(MipsFunction::Div),
+            "divu" => Some(MipsFunction::DivU),
+            "add" => Some(MipsFunction::Add),
+            "addu" => Some(MipsFunction::AddU),
+            "sub" => Some(MipsFunction::Sub),
+            "subu" => Some(MipsFunction::Subu),
+            "or" => Some(MipsFunction::Or),
+            "xor" => Some(MipsFunction::Xor),
+            "nor" => Some(MipsFunction::Nor),
+            "and" => Some(MipsFunction::And),
+            "sltu" => Some(MipsFunction::Sltu),
+            "slt" => Some(MipsFunction::Slt),
+            _ => None,
+        }
+    }
+
+
     fn to_str(&self) -> &str {
         match self {
             MipsFunction::Sll => "sll",

@@ -1,5 +1,4 @@
-use crate::cpu::{bus, bus::MemAccessError, bus::MemAccessErrorType};
-use object::Endian;
+use crate::cpu::{bus, bus::MemAccessError, bus::MemAccessErrorType, bus::SizedReadResult};
 
 pub struct RAM {
     mem: Box<[u8]>,
@@ -8,15 +7,6 @@ pub struct RAM {
 
 impl RAM {
     pub fn new(size: u32) -> Self {
-        // Endianness is managed on the bus level, but it is convenient
-        // to use it to read bytes into u32/u16s as well
-        // so we use the system endianess to do it.
-        let _endianness = if object::NativeEndian.is_little_endian() {
-            object::Endianness::Little
-        } else {
-            object::Endianness::Big
-        };
-
         RAM {
             mem: vec![0; size as usize].into_boxed_slice(),
             size,
@@ -29,14 +19,14 @@ impl bus::BusDevice for RAM {
         assert!(self.size >= size);
     }
 
-    fn read(&mut self, addr: u32, size: u32) -> Result<u32, MemAccessError> {
+    fn read(&mut self, addr: u32, size: u32) -> Result<SizedReadResult, MemAccessError> {
         assert!(addr < self.size);
         unsafe {
             let mem: *const u8 = self.mem.as_ptr().add(addr as usize);
             match size {
-                8 => Ok(*mem as u32),
-                16 => Ok(*(mem as *const u16) as u32),
-                32 => Ok(*(mem as *const u32)),
+                8 => Ok(SizedReadResult::Byte(*mem)),
+                16 => Ok(SizedReadResult::Word(*(mem as *const u16))),
+                32 => Ok(SizedReadResult::Dword(*(mem as *const u32))),
                 _ => Err(MemAccessError {
                     addr,
                     err: MemAccessErrorType::BadSize,
@@ -74,6 +64,8 @@ impl bus::BusDevice for RAM {
 
 #[cfg(test)]
 mod test {
+    use crate::cpu::bus::SizedReadResult;
+
     use super::bus::BusDevice;
 
     #[test]
@@ -84,7 +76,7 @@ mod test {
         bus.map(0x0, 0x1000, ram);
 
         match bus.read(0x0, 32) {
-            Ok(v) => assert_eq!(0, v),
+            Ok(v) => assert_eq!(SizedReadResult::Dword(0), v),
             Err(e) => panic!("Memory error {:?}", e),
         }
 
@@ -95,12 +87,12 @@ mod test {
         }
 
         match bus.read(0x0, 32) {
-            Ok(v) => assert_eq!(value, v),
+            Ok(v) => assert_eq!(SizedReadResult::Dword(value), v),
             Err(e) => panic!("Memory error {:?}", e),
         }
 
         match bus.read(0x0, 8) {
-            Ok(v) => assert_eq!((value & 0xff) as u8, v as u8),
+            Ok(v) => assert_eq!(SizedReadResult::Byte((value & 0xff) as u8), v),
             Err(e) => panic!("Memory error {:?}", e),
         }
     }

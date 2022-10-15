@@ -90,3 +90,80 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::cpu::jit::harness::TestHarness;
+
+    #[test]
+    fn jit_test_addu() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("addiu", 0, 0, 1, 40, 0);
+        th.push_instr("addiu", 0, 0, 2, 2, 0);
+        th.push_instr("addu", 1, 1, 2, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 42);
+    }
+
+    #[test]
+    fn jit_test_or() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("addiu", 0, 0, 2, 2, 0);
+        th.push_instr("or", 1, 1, 2, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 3);
+    }
+
+    #[test]
+    fn jit_test_sll() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("sll", 1, 0, 1, 1, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 2);
+    }
+
+    #[test]
+    fn jit_test_sltu_negative() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("sltu", 1, 1, 0, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 0);
+    }
+
+    #[test]
+    fn jit_test_sltu_positive() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("sltu", 1, 0, 1, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 1);
+    }
+}

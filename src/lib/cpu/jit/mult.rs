@@ -21,6 +21,7 @@ impl<'ctx> TranslationBlock<'ctx> {
     pub(super) fn emit_mfhi(&mut self, instr: &decode::MipsRInstr) {
         if self.finalized || instr.d_reg == 0 {
             self.instr_finished_emitting();
+            return;
         }
 
         let d_reg = self.gep_gp_register(instr.d_reg, &format!("mfhi_{}_d_reg", self.count_uniq));
@@ -100,5 +101,60 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.builder.build_store(lo_reg, mult_lo);
 
         self.instr_finished_emitting();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::cpu::jit::harness::TestHarness;
+
+    #[test]
+    fn jit_test_mult_with_overflow() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let multiplicand = 0x8000_0000;
+        let multiplier = 2;
+
+        th.load32(1, multiplicand);
+        th.load32(2, multiplier);
+        th.push_instr("mult", 0, 1, 2, 0, 0);
+        th.push_instr("mfhi", 1, 0, 0, 0, 0);
+        th.push_instr("mflo", 2, 0, 0, 0, 0);
+
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.hi, state.gpr[0]);
+        assert_eq!(state.lo, state.gpr[1]);
+
+        assert_eq!(state.hi, 0xffffffff);
+        assert_eq!(state.lo, 0x0);
+    }
+
+    #[test]
+    fn jit_test_divu() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let numerator = 5;
+        let denominator = 2;
+
+        th.load32(1, numerator);
+        th.load32(2, denominator);
+        th.push_instr("divu", 0, 1, 2, 0, 0);
+        th.push_instr("mfhi", 1, 0, 0, 0, 0);
+        th.push_instr("mflo", 2, 0, 0, 0, 0);
+
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.hi, state.gpr[0]);
+        assert_eq!(state.lo, state.gpr[1]);
+
+        assert_eq!(state.hi, 1);
+        assert_eq!(state.lo, 2);
     }
 }

@@ -87,6 +87,70 @@ pub fn mips_decode(instr_raw: u32) -> MipsInstr {
     }
 }
 
+fn mips_encode_rtype(instr: &MipsRInstr) -> u32 {
+    let mut res: u32 = instr.function as u32;
+    res |= (instr.shamt as u32) << 6;
+    res |= (instr.d_reg as u32) << 11;
+    res |= (instr.t_reg as u32) << 16;
+    res |= (instr.s_reg as u32) << 21;
+
+    res
+}
+
+fn mips_encode_itype(instr: &MipsIInstr) -> u32 {
+    let mut res: u32 = (instr.opcode as u32) << 26;
+    res |= (instr.s_reg as u32) << 21;
+    res |= (instr.t_reg as u32) << 16;
+    res |= instr.immediate as u32;
+
+    res
+}
+
+fn mips_encode_jtype(instr: &MipsJInstr) -> u32 {
+    let mut res: u32 = (instr.opcode as u32) << 26;
+    res |= instr.target;
+
+    res
+}
+
+pub fn mips_encode(instr: &MipsInstr) -> Option<u32> {
+    match instr {
+        MipsInstr::RType(r) => Some(mips_encode_rtype(r)),
+        MipsInstr::IType(i) => Some(mips_encode_itype(i)),
+        MipsInstr::JType(j) => Some(mips_encode_jtype(j)),
+        MipsInstr::Invalid => None,
+    }
+}
+
+pub fn mips_encode_str(istr: &str, d: u8, s: u8, t: u8, imm: u16, tgt: u32) -> Option<u32> {
+    if let Some(op) = MipsOpcode::from_str(istr) {
+        let instr = match op {
+            MipsOpcode::J | MipsOpcode::Jal =>
+            MipsInstr::JType(MipsJInstr{
+                opcode: op,
+                target: tgt,
+            }),
+            _ => MipsInstr::IType(MipsIInstr { opcode: op, s_reg: s, t_reg: t, immediate: imm }),
+        };
+
+        return mips_encode(&instr);
+    }
+
+    if let Some(function) = super::opcode::MipsFunction::from_str(istr) {
+        let instr = MipsRInstr{
+            s_reg: s,
+            d_reg: d,
+            t_reg: t,
+            shamt: imm as u8,
+            function,
+        };
+
+        return mips_encode(&MipsInstr::RType(instr));
+    }
+
+    None
+}
+
 impl std::fmt::Display for MipsRInstr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.function {

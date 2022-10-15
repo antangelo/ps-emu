@@ -1,4 +1,4 @@
-use libpsx::cpu::bus::BusDevice;
+use libpsx::cpu::bus::{BusDevice, SizedReadResult};
 use object::{Object, ObjectSection};
 
 fn load_section(bus: &mut dyn BusDevice, addr: u32, buf: &[u8]) {
@@ -24,7 +24,7 @@ impl libpsx::cpu::bus::BusDevice for DiscountUart {
         Ok(())
     }
 
-    fn read(&mut self, addr: u32, _size: u32) -> Result<u32, libpsx::cpu::bus::MemAccessError> {
+    fn read(&mut self, addr: u32, _size: u32) -> Result<SizedReadResult, libpsx::cpu::bus::MemAccessError> {
         Err(libpsx::cpu::bus::MemAccessError {
             addr,
             err: libpsx::cpu::bus::MemAccessErrorType::ReadOnly,

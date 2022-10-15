@@ -8,6 +8,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             return;
         }
 
+        let bool_type = self.ctx.bool_type();
+        let i8_type = self.ctx.i8_type();
         let i32_type = self.ctx.i32_type();
 
         let offset = i32_type.const_int(instr.immediate as u64, true);
@@ -23,29 +25,13 @@ impl<'ctx> TranslationBlock<'ctx> {
         );
 
         let size_v = i32_type.const_int(size as u64, false);
-        let read_val = self.mem_read(
+        let _read_success = self.mem_read(
             addr.into(),
             size_v.into(),
-            self.scratch_arg.into(),
+            i8_type.const_int(instr.t_reg as u64, false).into(),
+            bool_type.const_int(sext as u64, false).into(),
             &format!("{}_{}_read", instr.opcode, self.count_uniq),
         );
-
-        // Using dt in the load delay slot is UB, so we don't need to emulate anything fancy
-        let t_reg = self.gep_gp_register(
-            instr.t_reg,
-            &format!("{}_{}_t_reg", instr.opcode, self.count_uniq),
-        );
-
-        if sext {
-            let sext_val = self.builder.build_int_s_extend(
-                read_val.into_int_value(),
-                i32_type,
-                &format!("{}_{}_sext", instr.opcode, self.count_uniq),
-            );
-            self.builder.build_store(t_reg, sext_val);
-        } else {
-            self.builder.build_store(t_reg, read_val);
-        }
 
         // FIXME: Check result of mem read
 
@@ -112,5 +98,67 @@ impl<'ctx> TranslationBlock<'ctx> {
         // FIXME: Check result of mem write
 
         self.instr_finished_emitting();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::cpu::jit::harness::TestHarness;
+
+    #[test]
+    fn jit_test_sw_lw() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let val = 42;
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("addiu", 0, 0, 2, val as u16, 0);
+        th.push_instr("sw", 0, 1, 2, 0, 0);
+        th.push_instr("lw", 0, 1, 3, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], val);
+    }
+
+    #[test]
+    fn jit_test_sb_lb() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let val = -10;
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("addiu", 0, 0, 2, val as u16, 0);
+        th.push_instr("sb", 0, 1, 2, 0, 0);
+        th.push_instr("lb", 0, 1, 3, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], val as u32);
+    }
+
+    #[test]
+    fn jit_test_sb_lbu() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let val: i8 = -10;
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("addiu", 0, 0, 2, val as u8 as u16, 0);
+        th.push_instr("sb", 0, 1, 2, 0, 0);
+        th.push_instr("lbu", 0, 1, 3, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], val as u8 as u32);
     }
 }

@@ -126,3 +126,95 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.delay_slot_hazard = Some(Self::branch_delay_slot_action);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::cpu::jit::harness::TestHarness;
+
+    #[test]
+    fn jit_test_beq_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("beq", 0, 0, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 4 + (target << 2) as u32);
+    }
+
+    #[test]
+    fn jit_test_beq_not_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("beq", 0, 1, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 12);
+    }
+
+    #[test]
+    fn jit_test_bne_not_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("bne", 0, 0, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 8);
+    }
+
+    #[test]
+    fn jit_test_bne_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("bne", 0, 1, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 8 + (target << 2) as u32);
+    }
+
+    #[test]
+    fn jit_test_bgtz_not_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("bgtz", 0, 0, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 8);
+    }
+
+    #[test]
+    fn jit_test_bgtz_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("bgtz", 0, 1, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 8 + (target << 2) as u32);
+    }
+}

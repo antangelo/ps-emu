@@ -1,5 +1,5 @@
 use super::{decode, opcode};
-use crate::cpu::bus::BusDevice;
+use crate::cpu::bus::{BusDevice, SizedReadResult};
 use inkwell::values::AnyValue;
 use std::rc::Rc;
 
@@ -10,12 +10,14 @@ mod mem;
 mod mult;
 mod register_ops;
 
+#[cfg(test)]
+mod harness;
+
 type BusType = crate::cpu::bus_vec::VecBus;
 type TbDynFunc<'ctx> = unsafe extern "C" fn(
     state: *mut CpuState,
     bus: *mut BusType,
     mgr: *mut TbManager<'ctx>,
-    *mut u32,
 );
 
 fn new_tb<'ctx>(
@@ -29,8 +31,9 @@ fn new_tb<'ctx>(
     let builder = ctx.create_builder();
 
     let i32_type = ctx.i32_type();
-    let state_type = ctx.opaque_struct_type("mips_state");
-    state_type.set_body(&[i32_type.into(); 34], false);
+    let i8_type = ctx.i8_type();
+    let mips_state_type = ctx.opaque_struct_type("mips_state");
+    mips_state_type.set_body(&[i32_type.into(); 34], false);
 
     let bus_type = ctx
         .opaque_struct_type("mips_bus")
@@ -38,18 +41,24 @@ fn new_tb<'ctx>(
     let tb_mgr_type = ctx
         .opaque_struct_type("tb_manager")
         .ptr_type(inkwell::AddressSpace::Generic);
-    let i32_ptr_type = i32_type.ptr_type(inkwell::AddressSpace::Generic);
     let bool_type = ctx.bool_type();
+
+    let state_type = module
+        .get_struct_type("mips_state")
+        .unwrap()
+        .ptr_type(inkwell::AddressSpace::Generic);
 
     let read_fn = module.add_function(
         "tb_mem_read",
-        i32_type.fn_type(
+        bool_type.fn_type(
             &[
                 bus_type.into(),
                 tb_mgr_type.into(),
+                state_type.ptr_type(inkwell::AddressSpace::Generic).into(),
                 i32_type.into(),
                 i32_type.into(),
-                i32_ptr_type.into(),
+                i8_type.into(),
+                bool_type.into(),
             ],
             false,
         ),
@@ -74,16 +83,11 @@ fn new_tb<'ctx>(
     ee.add_global_mapping(&write_fn, tb_mem_write as usize);
 
     let void_type = ctx.void_type();
-    let state_type = module
-        .get_struct_type("mips_state")
-        .unwrap()
-        .ptr_type(inkwell::AddressSpace::Generic);
     let fn_type = void_type.fn_type(
         &[
             state_type.into(),
             bus_type.into(),
             tb_mgr_type.into(),
-            i32_ptr_type.into(),
         ],
         false,
     );
@@ -102,10 +106,6 @@ fn new_tb<'ctx>(
         .get_nth_param(2)
         .ok_or("No manager arg")?
         .into_pointer_value();
-    let scratch_arg = func
-        .get_nth_param(3)
-        .ok_or("No scratch arg")?
-        .into_pointer_value();
 
     let block = ctx.append_basic_block(func, &func_name);
     builder.position_at_end(block);
@@ -123,7 +123,6 @@ fn new_tb<'ctx>(
         state_arg,
         bus_arg,
         mgr_arg,
-        scratch_arg,
         delay_slot_hazard: None,
         delay_slot_arg: None,
         tb_func: None,
@@ -186,7 +185,6 @@ pub struct TranslationBlock<'ctx> {
     state_arg: inkwell::values::PointerValue<'ctx>,
     bus_arg: inkwell::values::PointerValue<'ctx>,
     mgr_arg: inkwell::values::PointerValue<'ctx>,
-    scratch_arg: inkwell::values::PointerValue<'ctx>,
 
     delay_slot_hazard: Option<fn(&mut TranslationBlock)>,
     delay_slot_arg: Option<DelaySlotArg<'ctx>>,
@@ -216,7 +214,7 @@ impl<'ctx> TranslationBlock<'ctx> {
         assert!(reg < 32);
         assert!(reg > 0);
         self.builder
-            .build_struct_gep(self.state_arg, reg as u32 - 1, name)
+            .build_struct_gep(self.state_arg, (reg as u32) - 1, name)
             .unwrap()
     }
 
@@ -242,14 +240,15 @@ impl<'ctx> TranslationBlock<'ctx> {
         &self,
         addr: inkwell::values::BasicMetadataValueEnum<'ctx>,
         size: inkwell::values::BasicMetadataValueEnum<'ctx>,
-        dest: inkwell::values::BasicMetadataValueEnum<'ctx>,
+        reg: inkwell::values::BasicMetadataValueEnum<'ctx>,
+        sign_extend: inkwell::values::BasicMetadataValueEnum<'ctx>,
         name: &str,
     ) -> inkwell::values::BasicValueEnum<'ctx> {
         let read_fn = self.module.get_function("tb_mem_read").unwrap();
         self.builder
             .build_call(
                 read_fn,
-                &[self.bus_arg.into(), self.mgr_arg.into(), addr, size, dest],
+                &[self.bus_arg.into(), self.mgr_arg.into(), self.state_arg.into(), addr, size, reg, sign_extend],
                 name,
             )
             .try_as_basic_value()
@@ -334,26 +333,30 @@ impl<'ctx> TranslationBlock<'ctx> {
     pub fn translate(&mut self, bus: &mut dyn BusDevice, pc: u32) -> Result<u32, String> {
         let mut addr = pc;
         while !self.finalized {
-            let instr_raw = bus.read(addr, 32).map_err(|_| "Failed to read instr")?;
-            let instr = super::decode::mips_decode(instr_raw);
+            let read_result = bus.read(addr, 32).map_err(|_| "Failed to read instr")?;
+            if let SizedReadResult::Dword(instr_raw) = read_result {
+                let instr = super::decode::mips_decode(instr_raw);
 
-            match instr {
-                decode::MipsInstr::RType(r) => self.emit_r_instr(&r),
-                decode::MipsInstr::IType(i) => self.emit_i_instr(&i),
-                decode::MipsInstr::JType(j) => self.emit_j_instr(&j),
-                _ => {
-                    self.emit_r_instr(&decode::MipsRInstr {
-                        s_reg: 0,
-                        t_reg: 0,
-                        d_reg: 0,
-                        shamt: 0,
-                        function: opcode::MipsFunction::Sll,
-                    });
-                    //return Err(format!("Invalid instruction {:#08x}: {:#08x} {}", addr, instr_raw, instr));
+                match instr {
+                    decode::MipsInstr::RType(r) => self.emit_r_instr(&r),
+                    decode::MipsInstr::IType(i) => self.emit_i_instr(&i),
+                    decode::MipsInstr::JType(j) => self.emit_j_instr(&j),
+                    _ => {
+                        self.emit_r_instr(&decode::MipsRInstr {
+                            s_reg: 0,
+                            t_reg: 0,
+                            d_reg: 0,
+                            shamt: 0,
+                            function: opcode::MipsFunction::Sll,
+                        });
+                        //return Err(format!("Invalid instruction {:#08x}: {:#08x} {}", addr, instr_raw, instr));
+                    }
                 }
-            }
 
-            addr += 4;
+                addr += 4;
+            } else {
+                panic!("Read of size 32 didn't return a dword? Instead have {:?}", read_result);
+            }
         }
 
         Ok(addr)
@@ -361,6 +364,22 @@ impl<'ctx> TranslationBlock<'ctx> {
 
     pub fn finalize(&mut self) {
         unsafe { self.tb_func = self.ee.get_function(&format!("tb_func_{}", self.id)).ok() }
+    }
+
+    pub(crate) fn execute(
+        &self,
+        state: &mut CpuState,
+        bus: &mut BusType,
+        tb_mgr: &mut TbManager<'ctx>,
+    ) -> Result<(), String> {
+        if let Some(func) = self.tb_func.as_ref() {
+            unsafe {
+                func.call(state, bus, tb_mgr);
+                Ok(())
+            }
+        } else {
+            Err(String::from("Failed to compile TB"))
+        }
     }
 }
 
@@ -400,17 +419,35 @@ impl Default for CpuState {
 pub(crate) unsafe extern "C" fn tb_mem_read(
     bus: *mut BusType,
     _mgr: *mut TbManager,
+    state: *mut CpuState,
     addr: u32,
     size: u32,
-    err: *mut u32,
-) -> u32 {
+    reg: u8,
+    sign_extend: bool,
+) -> bool {
     match (*bus).read(addr, size) {
         Ok(v) => {
-            *err = 0;
-            v
+            (*state).gpr[(reg - 1) as usize] = match v {
+                SizedReadResult::Byte(b) => {
+                    if sign_extend {
+                        b as i8 as u32
+                    } else {
+                        b as u32
+                    }
+                },
+                SizedReadResult::Word(w) => {
+                    if sign_extend {
+                        w as i16 as u32
+                    } else {
+                        w as u32
+                    }
+                },
+                SizedReadResult::Dword(d) => d,
+            };
+
+            true
         }
         Err(e) => {
-            *err = 1;
             panic!("tb_mem_read err: {:#08x?}", e);
         }
     }
@@ -438,7 +475,6 @@ pub(crate) unsafe extern "C" fn tb_mem_write(
 pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let ctx = inkwell::context::Context::create();
     let mut tb_mgr = TbManager::new();
-    let mut scratch: u32 = 0;
     let mut prev_pc = 0;
     let mut icount = 0;
     let now = std::time::Instant::now();
@@ -454,18 +490,10 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
 
         prev_pc = state.pc;
 
-        //tb_mgr.invalidate(prev_pc);
-
         let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
         icount += tb.count_uniq;
 
-        if let Some(func) = tb.tb_func.as_ref() {
-            unsafe {
-                func.call(state, bus, &mut tb_mgr, &mut scratch);
-            }
-        } else {
-            panic!("Failed to compile TB");
-        }
+        tb.execute(state, bus, &mut tb_mgr)?;
 
         if icount > 1_000_000 {
             let elapsed_micros_tot = now.elapsed().as_micros();
@@ -488,29 +516,4 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     println!("MIPS (average): {}", mips_avg / (mips_avg_count as f64));
 
     Ok(())
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    #[should_panic]
-    fn test_tb_write_null() {
-        unsafe {
-            super::tb_mem_write(core::ptr::null_mut(), core::ptr::null_mut(), 0, 0, 0);
-        }
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_tb_read_null_bus() {
-        unsafe {
-            super::tb_mem_read(
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                0,
-                0,
-                core::ptr::null_mut(),
-            );
-        }
-    }
 }
