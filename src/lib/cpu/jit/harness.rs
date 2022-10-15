@@ -1,7 +1,7 @@
-use crate::cpu::bus_vec::VecBus;
 use crate::cpu::bus::BusDevice;
-use crate::mem::memory::RAM;
+use crate::cpu::bus_vec::VecBus;
 use crate::cpu::decode;
+use crate::mem::memory::RAM;
 
 pub(super) struct TestHarness {
     addr: u32,
@@ -13,7 +13,7 @@ impl Default for TestHarness {
     fn default() -> Self {
         let mut bus = VecBus::default();
         let mem = Box::new(RAM::new(0x1000));
-        
+
         let addr = 0x1000;
         bus.map(addr, 0x1000, mem);
 
@@ -28,7 +28,9 @@ impl Default for TestHarness {
 impl TestHarness {
     pub(super) fn push_instr(&mut self, op: &str, d: u8, s: u8, t: u8, imm: u16, tgt: u32) {
         let instr_bin = decode::mips_encode_str(op, d, s, t, imm, tgt).unwrap();
-        self.bus.write(self.addr + 4 * self.icount, 32, instr_bin).unwrap();
+        self.bus
+            .write(self.addr + 4 * self.icount, 32, instr_bin)
+            .unwrap();
         self.icount += 1;
     }
 

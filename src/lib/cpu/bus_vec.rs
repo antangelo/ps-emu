@@ -80,7 +80,11 @@ mod test {
 
     impl super::BusDevice for SingleMemoryAddress {
         fn validate(&mut self, _base_addr: u32, _size: u32) {}
-        fn read(&mut self, _addr: u32, _size: u32) -> Result<SizedReadResult, super::MemAccessError> {
+        fn read(
+            &mut self,
+            _addr: u32,
+            _size: u32,
+        ) -> Result<SizedReadResult, super::MemAccessError> {
             Ok(SizedReadResult::Dword(self.value))
         }
 
@@ -97,7 +101,11 @@ mod test {
 
     impl super::BusDevice for ReadOnly {
         fn validate(&mut self, _base_addr: u32, _size: u32) {}
-        fn read(&mut self, _addr: u32, _size: u32) -> Result<SizedReadResult, super::MemAccessError> {
+        fn read(
+            &mut self,
+            _addr: u32,
+            _size: u32,
+        ) -> Result<SizedReadResult, super::MemAccessError> {
             Ok(SizedReadResult::Dword(self.value))
         }
 

@@ -172,7 +172,6 @@ impl MipsFunction {
         }
     }
 
-
     fn to_str(&self) -> &str {
         match self {
             MipsFunction::Sll => "sll",

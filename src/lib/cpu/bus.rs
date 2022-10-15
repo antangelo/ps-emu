@@ -1,4 +1,4 @@
-use object::{Endianness, Endian};
+use object::{Endian, Endianness};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SizedReadResult {

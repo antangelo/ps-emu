@@ -24,7 +24,11 @@ impl libpsx::cpu::bus::BusDevice for DiscountUart {
         Ok(())
     }
 
-    fn read(&mut self, addr: u32, _size: u32) -> Result<SizedReadResult, libpsx::cpu::bus::MemAccessError> {
+    fn read(
+        &mut self,
+        addr: u32,
+        _size: u32,
+    ) -> Result<SizedReadResult, libpsx::cpu::bus::MemAccessError> {
         Err(libpsx::cpu::bus::MemAccessError {
             addr,
             err: libpsx::cpu::bus::MemAccessErrorType::ReadOnly,

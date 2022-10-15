@@ -16,7 +16,7 @@ fn mips_disassemble_bus(bus: &mut dyn BusDevice, addr: u32, size: usize) {
                 addr + 4 * (i as u32),
                 instr,
                 libpsx::cpu::decode::mips_decode(instr)
-                );
+            );
         }
     }
 }

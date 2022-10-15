@@ -125,19 +125,23 @@ pub fn mips_encode(instr: &MipsInstr) -> Option<u32> {
 pub fn mips_encode_str(istr: &str, d: u8, s: u8, t: u8, imm: u16, tgt: u32) -> Option<u32> {
     if let Some(op) = MipsOpcode::from_str(istr) {
         let instr = match op {
-            MipsOpcode::J | MipsOpcode::Jal =>
-            MipsInstr::JType(MipsJInstr{
+            MipsOpcode::J | MipsOpcode::Jal => MipsInstr::JType(MipsJInstr {
                 opcode: op,
                 target: tgt,
             }),
-            _ => MipsInstr::IType(MipsIInstr { opcode: op, s_reg: s, t_reg: t, immediate: imm }),
+            _ => MipsInstr::IType(MipsIInstr {
+                opcode: op,
+                s_reg: s,
+                t_reg: t,
+                immediate: imm,
+            }),
         };
 
         return mips_encode(&instr);
     }
 
     if let Some(function) = super::opcode::MipsFunction::from_str(istr) {
-        let instr = MipsRInstr{
+        let instr = MipsRInstr {
             s_reg: s,
             d_reg: d,
             t_reg: t,

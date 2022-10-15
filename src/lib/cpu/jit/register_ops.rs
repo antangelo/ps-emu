@@ -10,12 +10,20 @@ impl<'ctx> TranslationBlock<'ctx> {
             return;
         }
 
-        let d_reg = self.gep_gp_register(instr.d_reg, &format!("{}_{}_d_reg", instr.function, self.count_uniq));
-        let t_val = self.get_gpr_value(instr.t_reg, &format!("{}_{}", instr.function, self.count_uniq));
+        let d_reg = self.gep_gp_register(
+            instr.d_reg,
+            &format!("{}_{}_d_reg", instr.function, self.count_uniq),
+        );
+        let t_val = self.get_gpr_value(
+            instr.t_reg,
+            &format!("{}_{}", instr.function, self.count_uniq),
+        );
 
-        let sll_val =
-            self.builder
-                .build_left_shift(t_val, shamt, &format!("{}_{}_res", instr.function, self.count_uniq));
+        let sll_val = self.builder.build_left_shift(
+            t_val,
+            shamt,
+            &format!("{}_{}_res", instr.function, self.count_uniq),
+        );
 
         self.builder.build_store(d_reg, sll_val);
 
@@ -40,12 +48,21 @@ impl<'ctx> TranslationBlock<'ctx> {
             return;
         }
 
-        let d_reg = self.gep_gp_register(instr.d_reg, &format!("{}_{}_d_reg", instr.function, self.count_uniq));
-        let t_val = self.get_gpr_value(instr.t_reg, &format!("{}_{}", instr.function, self.count_uniq));
+        let d_reg = self.gep_gp_register(
+            instr.d_reg,
+            &format!("{}_{}_d_reg", instr.function, self.count_uniq),
+        );
+        let t_val = self.get_gpr_value(
+            instr.t_reg,
+            &format!("{}_{}", instr.function, self.count_uniq),
+        );
 
-        let sll_val =
-            self.builder
-                .build_right_shift(t_val, shamt, sign_extend, &format!("{}_{}_res", instr.function, self.count_uniq));
+        let sll_val = self.builder.build_right_shift(
+            t_val,
+            shamt,
+            sign_extend,
+            &format!("{}_{}_res", instr.function, self.count_uniq),
+        );
 
         self.builder.build_store(d_reg, sll_val);
 
@@ -191,7 +208,9 @@ impl<'ctx> TranslationBlock<'ctx> {
             .builder
             .build_or(s_val, t_val, &format!("nor_{}_res", self.count_uniq));
 
-        let nor_val = self.builder.build_not(or_val, &format!("nor_{}_nor", self.count_uniq));
+        let nor_val = self
+            .builder
+            .build_not(or_val, &format!("nor_{}_nor", self.count_uniq));
 
         self.builder.build_store(d_reg, nor_val);
 

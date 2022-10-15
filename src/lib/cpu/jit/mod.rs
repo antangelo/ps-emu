@@ -14,11 +14,8 @@ mod register_ops;
 mod harness;
 
 type BusType = crate::cpu::bus_vec::VecBus;
-type TbDynFunc<'ctx> = unsafe extern "C" fn(
-    state: *mut CpuState,
-    bus: *mut BusType,
-    mgr: *mut TbManager<'ctx>,
-);
+type TbDynFunc<'ctx> =
+    unsafe extern "C" fn(state: *mut CpuState, bus: *mut BusType, mgr: *mut TbManager<'ctx>);
 
 fn new_tb<'ctx>(
     id: u64,
@@ -84,11 +81,7 @@ fn new_tb<'ctx>(
 
     let void_type = ctx.void_type();
     let fn_type = void_type.fn_type(
-        &[
-            state_type.into(),
-            bus_type.into(),
-            tb_mgr_type.into(),
-        ],
+        &[state_type.into(), bus_type.into(), tb_mgr_type.into()],
         false,
     );
     let func_name = format!("tb_func_{}", id);
@@ -248,7 +241,15 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.builder
             .build_call(
                 read_fn,
-                &[self.bus_arg.into(), self.mgr_arg.into(), self.state_arg.into(), addr, size, reg, sign_extend],
+                &[
+                    self.bus_arg.into(),
+                    self.mgr_arg.into(),
+                    self.state_arg.into(),
+                    addr,
+                    size,
+                    reg,
+                    sign_extend,
+                ],
                 name,
             )
             .try_as_basic_value()
@@ -316,7 +317,8 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     fn emit_special_branch(&mut self, instr: &decode::MipsIInstr) {
-        let special_op = num::FromPrimitive::from_u8(instr.t_reg).unwrap_or(opcode::MipsBranchSpecial::Invalid);
+        let special_op =
+            num::FromPrimitive::from_u8(instr.t_reg).unwrap_or(opcode::MipsBranchSpecial::Invalid);
         match special_op {
             _ => panic!("Not implemented: {}", special_op),
         }
@@ -375,7 +377,10 @@ impl<'ctx> TranslationBlock<'ctx> {
 
                 addr += 4;
             } else {
-                panic!("Read of size 32 didn't return a dword? Instead have {:?}", read_result);
+                panic!(
+                    "Read of size 32 didn't return a dword? Instead have {:?}",
+                    read_result
+                );
             }
         }
 
@@ -454,14 +459,14 @@ pub(crate) unsafe extern "C" fn tb_mem_read(
                     } else {
                         b as u32
                     }
-                },
+                }
                 SizedReadResult::Word(w) => {
                     if sign_extend {
                         w as i16 as u32
                     } else {
                         w as u32
                     }
-                },
+                }
                 SizedReadResult::Dword(d) => d,
             };
 
