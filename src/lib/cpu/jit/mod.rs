@@ -290,21 +290,41 @@ impl<'ctx> TranslationBlock<'ctx> {
     fn emit_r_instr(&mut self, instr: &decode::MipsRInstr) {
         match instr.function {
             opcode::MipsFunction::Sll => self.emit_sll(instr),
+            opcode::MipsFunction::Sllv => self.emit_sllv(instr),
+            opcode::MipsFunction::Srl => self.emit_srl(instr),
+            opcode::MipsFunction::Sra => self.emit_sra(instr),
+            opcode::MipsFunction::Slrv => self.emit_slrv(instr),
+            opcode::MipsFunction::Srav => self.emit_srav(instr),
             opcode::MipsFunction::Jr => self.emit_jr(instr),
             opcode::MipsFunction::Jalr => self.emit_jalr(instr),
+            opcode::MipsFunction::Add => self.emit_add(instr),
             opcode::MipsFunction::AddU => self.emit_addu(instr),
-            opcode::MipsFunction::Or => self.emit_or(instr),
+            opcode::MipsFunction::Sub => self.emit_sub(instr),
+            opcode::MipsFunction::Subu => self.emit_subu(instr),
             opcode::MipsFunction::Mflo => self.emit_mflo(instr),
             opcode::MipsFunction::Mfhi => self.emit_mfhi(instr),
             opcode::MipsFunction::DivU => self.emit_divu(instr),
             opcode::MipsFunction::Mult => self.emit_mult(instr),
+            opcode::MipsFunction::Or => self.emit_or(instr),
+            opcode::MipsFunction::Nor => self.emit_nor(instr),
+            opcode::MipsFunction::Xor => self.emit_xor(instr),
+            opcode::MipsFunction::And => self.emit_and(instr),
             opcode::MipsFunction::Sltu => self.emit_sltu(instr),
+            opcode::MipsFunction::Slt => self.emit_slt(instr),
             _ => panic!("Not implemented: {}", instr.function),
+        }
+    }
+
+    fn emit_special_branch(&mut self, instr: &decode::MipsIInstr) {
+        let special_op = num::FromPrimitive::from_u8(instr.t_reg).unwrap_or(opcode::MipsBranchSpecial::Invalid);
+        match special_op {
+            _ => panic!("Not implemented: {}", special_op),
         }
     }
 
     fn emit_i_instr(&mut self, instr: &decode::MipsIInstr) {
         match instr.opcode {
+            opcode::MipsOpcode::RegisterImm => self.emit_special_branch(instr),
             opcode::MipsOpcode::Beq => self.emit_beq(instr),
             opcode::MipsOpcode::Bgtz => self.emit_bgtz(instr),
             opcode::MipsOpcode::Bne => self.emit_bne(instr),

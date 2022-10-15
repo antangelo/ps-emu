@@ -125,6 +125,29 @@ mod test {
     }
 
     #[test]
+    #[ignore = "not implemented"]
+    fn jit_test_load_delay_slot() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let val = 42;
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("addiu", 0, 0, 2, val as u16, 0);
+        th.load32(3, 10);
+        th.push_instr("sw", 0, 1, 2, 0, 0);
+        th.push_instr("lw", 0, 1, 3, 0, 0);
+        th.push_instr("addu", 4, 3, 0, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], val);
+        assert_eq!(state.gpr[3], 10);
+    }
+
+    #[test]
     fn jit_test_sb_lb() {
         let mut th = TestHarness::default();
         let mut state = crate::cpu::jit::CpuState::default();
