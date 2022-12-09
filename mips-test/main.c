@@ -5,6 +5,9 @@
 //    return n * factorial(n - 1);
 //}
 
+void waste_time();
+int reg_fib(int v);
+
 int fibonnaci(int n)
 {
     if (n == 1) return 1;
@@ -12,6 +15,7 @@ int fibonnaci(int n)
 
     return fibonnaci(n - 1) + fibonnaci(n - 2);
 }
+
 
 void format_uint_to_str(unsigned int num, unsigned int base, char *bf)
 {
@@ -34,6 +38,7 @@ void format_uint_to_str(unsigned int num, unsigned int base, char *bf)
 	*bf = 0;
 }
 
+
 void print(char *c)
 {
     volatile char *printer = (volatile char*)0x1fd003f8;
@@ -42,6 +47,7 @@ void print(char *c)
         ++c;
     }
 }
+
 
 void print_int(int d)
 {
@@ -52,7 +58,12 @@ void print_int(int d)
 
 int main()
 {
-    int f = fibonnaci(31);
+    int f;
+
+    for (int i = 3; i <= 31; ++i) f = reg_fib(i);
+    (void)f;
+
+    //waste_time();
 
     print_int(f);
     print("\r\n");

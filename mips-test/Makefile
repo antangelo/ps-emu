@@ -4,7 +4,7 @@ CC = $(LLVM_DIR)/clang -target $(CLANG_TARGET) -S
 AS = $(LLVM_DIR)/clang -target $(CLANG_TARGET) -c
 LD = ld.lld
 
-CFLAGS = -mcpu=mips1 -ffreestanding -nostdlib -nostdinc -g
+CFLAGS = -mcpu=mips1 -ffreestanding -nostdlib -nostdinc -g -O3
 LDFLAGS = -static -nmagic
 
 OBJS = out/main.o out/boot.o

@@ -1,5 +1,9 @@
+use std::str::FromStr;
+
 use libpsx::cpu::bus::{BusDevice, SizedReadResult};
 use object::{Object, ObjectSection};
+
+use argparse::{ArgumentParser, Store, StoreTrue};
 
 fn load_section(bus: &mut dyn BusDevice, addr: u32, buf: &[u8]) {
     let len = buf.len();
@@ -36,10 +40,40 @@ impl libpsx::cpu::bus::BusDevice for DiscountUart {
     }
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
+enum ExecType {
+    JIT,
+    Interpreter,
+    ThreadedInt,
+}
 
-    let buf: Vec<u8> = std::fs::read(&args[1]).unwrap();
+impl FromStr for ExecType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "jit" => Ok(Self::JIT),
+            "int" | "interpreter" => Ok(Self::Interpreter),
+            "thr" | "threaded" | "cached" => Ok(Self::ThreadedInt),
+            _ => Err(String::from("Invalid execution mode")),
+        }
+    }
+}
+
+fn main() {
+    let mut exec_mode = ExecType::JIT;
+    let mut file = String::new();
+
+    {
+        let mut ap = ArgumentParser::new();
+        ap.set_description("Run a MIPS elf file");
+        ap.refer(&mut exec_mode)
+            .add_option(&["-m", "--mode"], Store, "Execution mode");
+        ap.refer(&mut file)
+            .add_argument("Object File", Store, "MIPS File")
+            .required();
+        ap.parse_args_or_exit();
+    }
+
+    let buf: Vec<u8> = std::fs::read(&file).unwrap();
     let obj = object::File::parse(&*buf).unwrap();
 
     if obj.architecture() != object::Architecture::Mips {
@@ -64,5 +98,11 @@ fn main() {
 
     let mut state = libpsx::cpu::jit::CpuState::default();
     state.set_pc(obj.entry() as u32);
-    libpsx::cpu::jit::execute(&mut bus, &mut state).unwrap();
+
+    match exec_mode {
+        ExecType::JIT => libpsx::cpu::jit::execute(&mut bus, &mut state),
+        ExecType::Interpreter => libpsx::cpu::interpret::execute(&mut bus, &mut state),
+        ExecType::ThreadedInt => libpsx::cpu::threaded::execute(&mut bus, &mut state),
+    }
+    .unwrap();
 }

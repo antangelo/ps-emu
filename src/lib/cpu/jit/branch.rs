@@ -6,59 +6,34 @@ impl<'ctx> TranslationBlock<'ctx> {
         let arg = tb.delay_slot_arg.as_ref().unwrap();
         let i32_type = tb.ctx.i32_type();
 
-        let taken = tb
-            .ctx
-            .insert_basic_block_after(tb.func_block, &format!("beq_{}_taken", arg.count));
+        let immed_i = arg.immed as i16;
+        let target = (immed_i as i32) * 4;
 
-        {
-            tb.builder.position_at_end(taken);
+        let curr_pc_off = (tb.count_uniq * 4) as i32;
+        let target_taken = i32_type.const_int((target + curr_pc_off) as u64, true);
 
-            // FIXME: This is stupid
-            let immed_i = arg.immed as i16;
-            let target = (immed_i as i32) * 4;
+        let target_not_taken = i32_type.const_int((tb.count_uniq * 4 + 4) as u64, false);
 
-            let curr_pc_off = (tb.count_uniq * 4) as i32;
-            let target_v = i32_type.const_int((target + curr_pc_off) as u64, true);
+        let target_v = tb.builder.build_select(
+            arg.value.into_int_value(),
+            target_taken,
+            target_not_taken,
+            &format!("b_select_{}", arg.count),
+        );
 
-            let pc_ptr = tb.gep_pc(&format!("beq_{}", arg.count));
-            let pc_val = tb
-                .builder
-                .build_load(pc_ptr, &format!("beq_{}_pc_val", arg.count));
+        let pc_ptr = tb.gep_pc(&format!("beq_{}", arg.count));
+        let pc_val = tb
+            .builder
+            .build_load(pc_ptr, &format!("beq_{}_pc_val", arg.count));
 
-            let next_pc = tb.builder.build_int_add(
-                pc_val.into_int_value(),
-                target_v,
-                &format!("beq_{}_next_pc", arg.count),
-            );
-            tb.builder.build_store(pc_ptr, next_pc);
-            tb.builder.build_return(None);
-        }
+        let next_pc = tb.builder.build_int_add(
+            pc_val.into_int_value(),
+            target_v.into_int_value(),
+            &format!("beq_{}_next_pc", arg.count),
+        );
 
-        let not_taken = tb
-            .ctx
-            .insert_basic_block_after(taken, &format!("beq_{}_not_taken", arg.count));
-
-        {
-            tb.builder.position_at_end(not_taken);
-            let target_v = i32_type.const_int((tb.count_uniq * 4 + 4) as u64, false);
-
-            let pc_ptr = tb.gep_pc(&format!("beq_{}", arg.count));
-            let pc_val = tb
-                .builder
-                .build_load(pc_ptr, &format!("beq_{}_pc_val", arg.count));
-
-            let next_pc = tb.builder.build_int_add(
-                pc_val.into_int_value(),
-                target_v,
-                &format!("beq_{}_next_pc", arg.count),
-            );
-            tb.builder.build_store(pc_ptr, next_pc);
-            tb.builder.build_return(None);
-        }
-
-        tb.builder.position_at_end(tb.func_block);
-        tb.builder
-            .build_conditional_branch(arg.value.into_int_value(), taken, not_taken);
+        tb.builder.build_store(pc_ptr, next_pc);
+        tb.builder.build_return(None);
         tb.finalized = true;
     }
 

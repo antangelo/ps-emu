@@ -121,6 +121,7 @@ mod test {
 
         th.execute(&mut state).unwrap();
 
+        println!("{:08x?}", state);
         assert_eq!(state.gpr[2], val);
     }
 

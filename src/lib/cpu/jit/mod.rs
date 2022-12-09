@@ -1,7 +1,7 @@
 use super::{decode, opcode};
 use crate::cpu::bus::{BusDevice, SizedReadResult};
 use inkwell::values::AnyValue;
-use std::rc::Rc;
+use std::{collections, rc::Rc};
 
 mod branch;
 mod immed;
@@ -23,7 +23,7 @@ fn new_tb<'ctx>(
 ) -> Result<TranslationBlock<'ctx>, String> {
     let module = ctx.create_module(&format!("tb_mod_{}", id));
     let ee = module
-        .create_jit_execution_engine(inkwell::OptimizationLevel::None)
+        .create_jit_execution_engine(inkwell::OptimizationLevel::Less)
         .map_err(|e| e.to_string())?;
     let builder = ctx.create_builder();
 
@@ -112,7 +112,7 @@ fn new_tb<'ctx>(
         ee,
         builder,
         func,
-        func_block: block,
+        //func_block: block,
         state_arg,
         bus_arg,
         mgr_arg,
@@ -124,12 +124,16 @@ fn new_tb<'ctx>(
 
 pub(crate) struct TbManager<'ctx> {
     trie: super::trie::Trie<TranslationBlock<'ctx>>,
+    bt: collections::BTreeMap<u32, Rc<TranslationBlock<'ctx>>>,
+    hm: collections::HashMap<u32, Rc<TranslationBlock<'ctx>>>,
 }
 
 impl<'ctx> TbManager<'ctx> {
     fn new() -> Self {
         Self {
             trie: super::trie::Trie::default(),
+            bt: collections::BTreeMap::default(),
+            hm: collections::HashMap::default(),
         }
     }
 
@@ -139,6 +143,8 @@ impl<'ctx> TbManager<'ctx> {
         addr: u32,
         bus: &mut impl BusDevice,
     ) -> Result<Rc<TranslationBlock<'ctx>>, String> {
+        //if let Some(tb) = self.hm.get(&addr) {
+        //if let Some(tb) = self.bt.get(&addr) {
         if let Some(tb) = self.trie.lookup(addr) {
             return Ok(tb.clone());
         }
@@ -147,7 +153,9 @@ impl<'ctx> TbManager<'ctx> {
         tb.translate(bus, addr)?;
         tb.finalize();
         let tb_rc = Rc::new(tb);
-        self.trie.insert(addr, tb_rc.clone())?;
+        self.trie.insert(addr, &tb_rc)?;
+        //self.bt.insert(addr, tb_rc.clone());
+        //self.hm.insert(addr, tb_rc.clone());
         return Ok(tb_rc);
     }
 
@@ -173,8 +181,7 @@ pub struct TranslationBlock<'ctx> {
     builder: inkwell::builder::Builder<'ctx>,
 
     func: inkwell::values::FunctionValue<'ctx>,
-    func_block: inkwell::basic_block::BasicBlock<'ctx>,
-
+    //func_block: inkwell::basic_block::BasicBlock<'ctx>,
     state_arg: inkwell::values::PointerValue<'ctx>,
     bus_arg: inkwell::values::PointerValue<'ctx>,
     mgr_arg: inkwell::values::PointerValue<'ctx>,
@@ -304,8 +311,11 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsFunction::Subu => self.emit_subu(instr),
             opcode::MipsFunction::Mflo => self.emit_mflo(instr),
             opcode::MipsFunction::Mfhi => self.emit_mfhi(instr),
+            opcode::MipsFunction::Mtlo => self.emit_mtlo(instr),
+            opcode::MipsFunction::Mthi => self.emit_mthi(instr),
             opcode::MipsFunction::DivU => self.emit_divu(instr),
             opcode::MipsFunction::Mult => self.emit_mult(instr),
+            opcode::MipsFunction::MultU => self.emit_multu(instr),
             opcode::MipsFunction::Or => self.emit_or(instr),
             opcode::MipsFunction::Nor => self.emit_nor(instr),
             opcode::MipsFunction::Xor => self.emit_xor(instr),
@@ -376,6 +386,14 @@ impl<'ctx> TranslationBlock<'ctx> {
                 }
 
                 addr += 4;
+                if ((addr >> 2) & 0x3f == 0) && !self.finalized {
+                    let i32_type = self.ctx.i32_type();
+                    let pc_val = i32_type.const_int(addr as u64, false);
+                    let pc_ptr = self.gep_pc("block_end");
+                    self.builder.build_store(pc_ptr, pc_val);
+                    self.builder.build_return(None);
+                    self.finalized = true;
+                }
             } else {
                 panic!(
                     "Read of size 32 didn't return a dword? Instead have {:?}",
@@ -383,6 +401,10 @@ impl<'ctx> TranslationBlock<'ctx> {
                 );
             }
         }
+
+        // Do not allow a delay action on the final instruction of the block, all must be
+        // consumed
+        assert!(self.delay_slot_hazard.is_none());
 
         Ok(addr)
     }
@@ -417,15 +439,31 @@ impl<'ctx> std::fmt::Display for TranslationBlock<'ctx> {
 #[repr(C)]
 #[derive(Debug)]
 pub struct CpuState {
-    gpr: [u32; 31],
-    hi: u32,
-    lo: u32,
-    pc: u32,
+    pub(super) gpr: [u32; 31],
+    pub(super) hi: u32,
+    pub(super) lo: u32,
+    pub(super) pc: u32,
 }
 
 impl CpuState {
     pub fn set_pc(&mut self, pc: u32) {
         self.pc = pc;
+    }
+
+    pub fn get_reg_val(&self, reg: u8) -> u32 {
+        if reg == 0 {
+            0
+        } else {
+            self.gpr[(reg - 1) as usize]
+        }
+    }
+
+    pub fn set_reg_val(&mut self, reg: u8, val: u32) {
+        if reg == 0 {
+            return;
+        }
+
+        self.gpr[(reg - 1) as usize] = val;
     }
 }
 
@@ -501,44 +539,54 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let ctx = inkwell::context::Context::create();
     let mut tb_mgr = TbManager::new();
     let mut prev_pc = 0;
+    let mut icount_tot = 0;
     let mut icount = 0;
     let now = std::time::Instant::now();
     let mut prev_elapsed: u128 = 0;
 
     let mut mips_avg: f64 = 0.0;
+    let mut mips_min: f64 = f64::MAX;
+    let mut mips_max: f64 = 0.0;
     let mut mips_avg_count: u128 = 0;
 
+    let timing_scale = 1_000;
+
     loop {
-        if state.pc == prev_pc {
+        let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
+
+        if state.pc == prev_pc && tb.count_uniq == 2 {
             break;
         }
-
         prev_pc = state.pc;
 
-        let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
+        tb.execute(state, bus, &mut tb_mgr)?;
         icount += tb.count_uniq;
 
-        tb.execute(state, bus, &mut tb_mgr)?;
-
-        if icount > 1_000_000 {
+        if icount > timing_scale {
             let elapsed_micros_tot = now.elapsed().as_micros();
             let elapsed_micros = elapsed_micros_tot - prev_elapsed;
             prev_elapsed = elapsed_micros_tot;
             let elapsed = (elapsed_micros as f64) / 1_000_000.0;
-            mips_avg += (icount as f64) / elapsed / 1_000_000.0;
+            let mips = (icount as f64) / elapsed / 1_000_000.0;
+            mips_min = f64::min(mips_min, mips);
+            mips_max = f64::max(mips_max, mips);
+            mips_avg += mips;
             mips_avg_count += 1;
 
+            icount_tot += icount;
             icount = 0;
         }
     }
 
-    let elapsed_micros = now.elapsed().as_micros() - prev_elapsed;
+    let elapsed_micros = now.elapsed().as_micros();
     let elapsed = (elapsed_micros as f64) / 1_000_000.0;
 
     println!("CpuState: {:x?}", state);
     println!("elapsed time: {}", elapsed);
-    println!("icount: {}", icount);
+    println!("icount: {}", icount_tot + icount);
     println!("MIPS (average): {}", mips_avg / (mips_avg_count as f64));
+    println!("MIPS (min): {}", mips_min);
+    println!("MIPS (max): {}", mips_max);
 
     Ok(())
 }

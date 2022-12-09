@@ -48,7 +48,8 @@ impl TestHarness {
 
     pub(super) fn execute(&mut self, state: &mut super::CpuState) -> Result<(), String> {
         let ctx = inkwell::context::Context::create();
-        let mut tb_mgr = super::TbManager::new();
+        //let mut tb_mgr = super::TbManager::new();
+        let mut tb_mgr = crate::cpu::threaded::TbManager::new();
 
         state.set_pc(self.addr);
 
