@@ -40,7 +40,9 @@ impl VecBus {
 impl BusDevice for VecBus {
     fn validate(&mut self, _base_addr: u32, _size: u32) {}
 
-    fn read(&mut self, addr: u32, size: u32) -> Result<SizedReadResult, MemAccessError> {
+    fn read(&mut self, mut addr: u32, size: u32) -> Result<SizedReadResult, MemAccessError> {
+        addr &= 0x1fff_ffff;
+
         for ent in &mut self.bus {
             if ent.addr <= addr && addr <= ent.addr + ent.size {
                 return ent.device.read(addr - ent.addr, size);
@@ -53,7 +55,9 @@ impl BusDevice for VecBus {
         })
     }
 
-    fn write(&mut self, addr: u32, size: u32, value: u32) -> Result<(), MemAccessError> {
+    fn write(&mut self, mut addr: u32, size: u32, value: u32) -> Result<(), MemAccessError> {
+        addr &= 0x1fff_ffff;
+
         for ent in &mut self.bus {
             if ent.addr <= addr && addr <= ent.addr + ent.size {
                 return ent.device.write(addr - ent.addr, size, value);

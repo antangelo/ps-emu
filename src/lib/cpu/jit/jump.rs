@@ -8,9 +8,13 @@ impl<'ctx> TranslationBlock<'ctx> {
         }
 
         let i32_type = self.ctx.i32_type();
-        let target_v = i32_type.const_int((instr.target << 2) as u64, false);
 
-        let pc = self.gep_pc(&format!("j_{}", self.count_uniq));
+        let pc = self.gep_pc(&format!("j_pc_gep_{}", self.count_uniq));
+        let pc_val = self.builder.build_load(pc, &format!("j_pc_{}", self.count_uniq));
+        let pc_mask = self.builder.build_and(pc_val.into_int_value(), i32_type.const_int(0xe000_0000, false).into(), &format!("j_pc_mask_{}", self.count_uniq));
+
+        let target_addr = i32_type.const_int((instr.target << 2) as u64, false);
+        let target_v = self.builder.build_or(target_addr, pc_mask, &format!("j_target_{}", self.count_uniq));
 
         self.builder.build_store(pc, target_v);
 
@@ -23,7 +27,6 @@ impl<'ctx> TranslationBlock<'ctx> {
 
     pub(super) fn emit_jal(&mut self, instr: &decode::MipsJInstr) {
         let i32_type = self.ctx.i32_type();
-        let target_v = i32_type.const_int((instr.target << 2) as u64, false);
 
         let pc = self.gep_pc(&format!("jal_{}", self.count_uniq));
         let ra = self.gep_gp_register(31, &format!("jal_{}_ra", self.count_uniq));
@@ -38,6 +41,10 @@ impl<'ctx> TranslationBlock<'ctx> {
             pc_incr,
             &format!("jal_{}_ra_val", self.count_uniq),
         );
+
+        let target_addr = i32_type.const_int((instr.target << 2) as u64, false);
+        let pc_mask = self.builder.build_and(pc_val.into_int_value(), i32_type.const_int(0xe000_0000, false).into(), &format!("j_pc_mask_{}", self.count_uniq));
+        let target_v = self.builder.build_or(target_addr, pc_mask, &format!("j_target_{}", self.count_uniq));
 
         self.builder.build_store(ra, ra_val);
         self.builder.build_store(pc, target_v);
@@ -129,19 +136,39 @@ mod test {
     }
 
     #[test]
-    #[ignore = "not implemented"]
     fn jit_test_j_upper_bits_retained() {
         let mut th = TestHarness::default();
         let mut state = crate::cpu::jit::CpuState::default();
         let target = 0x0100;
 
-        // FIXME: Allow harness to execute in KSEG0,1,2
+        let addr_mask = 0x8000_0000;
+        th.addr |= addr_mask;
+
         th.push_instr("j", 0, 0, 0, 0, target);
         th.push_instr("sll", 0, 0, 0, 0, 0);
 
         th.execute(&mut state).unwrap();
 
-        assert_eq!(state.pc, target << 2);
+        assert_eq!(state.pc, addr_mask | (target << 2));
+    }
+
+    #[test]
+    fn jit_test_jal_upper_bits_retained() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let target = 0x0100;
+
+        let addr_mask = 0x8000_0000;
+        th.addr |= addr_mask;
+
+        th.push_instr("jal", 0, 0, 0, 0, target);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, addr_mask | (target << 2));
+        assert_eq!(state.gpr[30], addr_mask | 0x1008);
     }
 
     #[test]

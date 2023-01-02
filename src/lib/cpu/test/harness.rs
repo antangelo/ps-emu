@@ -4,7 +4,7 @@ use crate::cpu::{decode, CpuState};
 use crate::mem::memory::RAM;
 
 pub(crate) struct TestHarness {
-    addr: u32,
+    pub(crate) addr: u32,
     icount: u32,
     bus: VecBus,
 }
