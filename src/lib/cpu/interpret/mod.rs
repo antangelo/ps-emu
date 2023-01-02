@@ -1,8 +1,8 @@
 use super::bus::{BusDevice, SizedReadResult};
 use super::bus_vec::VecBus;
 use super::decode::{MipsIInstr, MipsInstr, MipsJInstr, MipsRInstr};
-use super::jit::CpuState;
 use super::opcode::{MipsFunction, MipsOpcode};
+use super::CpuState;
 
 type BusType = VecBus;
 

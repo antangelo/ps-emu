@@ -1,7 +1,10 @@
-use super::{decode, opcode};
+use super::{decode, opcode, CpuState};
 use crate::cpu::bus::{BusDevice, SizedReadResult};
 use inkwell::values::AnyValue;
 use std::{collections, rc::Rc};
+
+#[cfg(test)]
+pub use super::test::harness;
 
 mod branch;
 mod immed;
@@ -10,12 +13,41 @@ mod mem;
 mod mult;
 mod register_ops;
 
-#[cfg(test)]
-mod harness;
-
 type BusType = crate::cpu::bus_vec::VecBus;
 type TbDynFunc<'ctx> =
     unsafe extern "C" fn(state: *mut CpuState, bus: *mut BusType, mgr: *mut TbManager<'ctx>);
+
+struct DelaySlotArg<'ctx> {
+    count: u64,
+    immed: u16,
+    value: inkwell::values::BasicValueEnum<'ctx>,
+}
+
+pub struct TranslationBlock<'ctx> {
+    id: u64,
+    count_uniq: u64,
+    finalized: bool,
+
+    ctx: &'ctx inkwell::context::Context,
+    module: inkwell::module::Module<'ctx>,
+    ee: inkwell::execution_engine::ExecutionEngine<'ctx>,
+    builder: inkwell::builder::Builder<'ctx>,
+
+    func: inkwell::values::FunctionValue<'ctx>,
+    //func_block: inkwell::basic_block::BasicBlock<'ctx>,
+    state_arg: inkwell::values::PointerValue<'ctx>,
+    bus_arg: inkwell::values::PointerValue<'ctx>,
+    mgr_arg: inkwell::values::PointerValue<'ctx>,
+
+    delay_slot_hazard: Option<fn(&mut TranslationBlock)>,
+    delay_slot_arg: Option<DelaySlotArg<'ctx>>,
+
+    tb_func: Option<inkwell::execution_engine::JitFunction<'ctx, TbDynFunc<'ctx>>>,
+}
+
+pub(crate) struct TbManager<'ctx> {
+    trie: super::trie::Trie<TranslationBlock<'ctx>>,
+}
 
 fn new_tb<'ctx>(
     id: u64,
@@ -30,7 +62,7 @@ fn new_tb<'ctx>(
     let i32_type = ctx.i32_type();
     let i8_type = ctx.i8_type();
     let mips_state_type = ctx.opaque_struct_type("mips_state");
-    mips_state_type.set_body(&[i32_type.into(); 34], false);
+    mips_state_type.set_body(&[i32_type.into(); 36], false);
 
     let bus_type = ctx
         .opaque_struct_type("mips_bus")
@@ -122,29 +154,19 @@ fn new_tb<'ctx>(
     })
 }
 
-pub(crate) struct TbManager<'ctx> {
-    trie: super::trie::Trie<TranslationBlock<'ctx>>,
-    bt: collections::BTreeMap<u32, Rc<TranslationBlock<'ctx>>>,
-    hm: collections::HashMap<u32, Rc<TranslationBlock<'ctx>>>,
-}
-
 impl<'ctx> TbManager<'ctx> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             trie: super::trie::Trie::default(),
-            bt: collections::BTreeMap::default(),
-            hm: collections::HashMap::default(),
         }
     }
 
-    fn get_tb(
+    pub fn get_tb(
         &mut self,
         ctx: &'ctx inkwell::context::Context,
         addr: u32,
         bus: &mut impl BusDevice,
     ) -> Result<Rc<TranslationBlock<'ctx>>, String> {
-        //if let Some(tb) = self.hm.get(&addr) {
-        //if let Some(tb) = self.bt.get(&addr) {
         if let Some(tb) = self.trie.lookup(addr) {
             return Ok(tb.clone());
         }
@@ -154,42 +176,12 @@ impl<'ctx> TbManager<'ctx> {
         tb.finalize();
         let tb_rc = Rc::new(tb);
         self.trie.insert(addr, &tb_rc)?;
-        //self.bt.insert(addr, tb_rc.clone());
-        //self.hm.insert(addr, tb_rc.clone());
         return Ok(tb_rc);
     }
 
     fn invalidate(&mut self, addr: u32) {
         self.trie.invalidate(addr);
     }
-}
-
-struct DelaySlotArg<'ctx> {
-    count: u64,
-    immed: u16,
-    value: inkwell::values::BasicValueEnum<'ctx>,
-}
-
-pub struct TranslationBlock<'ctx> {
-    id: u64,
-    count_uniq: u64,
-    finalized: bool,
-
-    ctx: &'ctx inkwell::context::Context,
-    module: inkwell::module::Module<'ctx>,
-    ee: inkwell::execution_engine::ExecutionEngine<'ctx>,
-    builder: inkwell::builder::Builder<'ctx>,
-
-    func: inkwell::values::FunctionValue<'ctx>,
-    //func_block: inkwell::basic_block::BasicBlock<'ctx>,
-    state_arg: inkwell::values::PointerValue<'ctx>,
-    bus_arg: inkwell::values::PointerValue<'ctx>,
-    mgr_arg: inkwell::values::PointerValue<'ctx>,
-
-    delay_slot_hazard: Option<fn(&mut TranslationBlock)>,
-    delay_slot_arg: Option<DelaySlotArg<'ctx>>,
-
-    tb_func: Option<inkwell::execution_engine::JitFunction<'ctx, TbDynFunc<'ctx>>>,
 }
 
 impl<'ctx> TranslationBlock<'ctx> {
@@ -234,6 +226,95 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.builder
             .build_struct_gep(self.state_arg, 33, &format!("{}_pc", prefix))
             .unwrap()
+    }
+
+    fn apply_load_delay_if_present(&mut self) {
+        let i32_type = self.ctx.i32_type();
+        let i64_type = self.ctx.i64_type();
+
+        let register = self
+            .builder
+            .build_struct_gep(self.state_arg, 34, "ld_delay_reg")
+            .unwrap();
+
+        // FIXME: Assert that register_val is in [0, 31]
+        let register_val = self.builder.build_load(register, "ld_delay_reg_val");
+        let reg_delay_apply_cond = self.builder.build_int_compare(
+            inkwell::IntPredicate::NE,
+            register_val.into_int_value(),
+            i32_type.const_zero(),
+            "ld_delay_in_use",
+        );
+
+        // If the delay slot is not in use, use the register_val as offset so it's a valid index
+        // into the array
+        let reg_state_offset = self.builder.build_int_sub(
+            register_val.into_int_value(),
+            i32_type.const_int(1, false),
+            "ld_delay_reg_state_offset",
+        );
+        let reg_adjusted = self
+            .builder
+            .build_select(
+                reg_delay_apply_cond,
+                reg_state_offset,
+                register_val.into_int_value(),
+                "ld_delay_reg_adjusted",
+            )
+            .into_int_value();
+
+        // This causes LLVM to segfault for some reason?
+        /*
+        let reg_ptr = unsafe {
+            self.builder.build_in_bounds_gep(
+                self.state_arg,
+                &[i32_type.const_zero(), reg_adjusted],
+                "ld_delay_reg_ptr",
+            )
+        };
+        */
+
+        let reg_ptr_offset = self
+            .builder
+            .build_int_mul(reg_adjusted, i64_type.const_int(4, true), "fsfsds")
+            .const_z_ext(i64_type);
+        let state_int = self
+            .builder
+            .build_ptr_to_int(self.state_arg, i64_type, "ld_state_ptr_int");
+        let reg_ptr_int =
+            self.builder
+                .build_int_add(state_int, reg_ptr_offset, "ld_state_reg_ptr_int");
+        let reg_ptr = self.builder.build_int_to_ptr(
+            reg_ptr_int,
+            i32_type.ptr_type(inkwell::AddressSpace::Generic),
+            "ld_state_reg_ptr",
+        );
+
+        let load_value_ptr = self
+            .builder
+            .build_struct_gep(self.state_arg, 35, "ld_delay_value")
+            .unwrap();
+
+        // Select the delay value if the delay reg is set (within [1, 31]), otherwise reload the
+        // same value that's currently in the register
+        // FIXME: When the TB prologue uses a branching version of this, we can remove this select 
+        // since this path will only be invoked by a delay slot action when the load register is
+        // set.
+        let reg_ptr_select = self
+            .builder
+            .build_select(
+                reg_delay_apply_cond,
+                load_value_ptr,
+                reg_ptr,
+                "ld_delay_select_ptr",
+            )
+            .into_pointer_value();
+
+        let reg_new_val = self
+            .builder
+            .build_load(reg_ptr_select, "ld_delay_new_reg_val");
+        self.builder.build_store(reg_ptr, reg_new_val);
+        self.builder.build_store(register, i32_type.const_zero());
     }
 
     fn mem_read(
@@ -363,6 +444,9 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     pub fn translate(&mut self, bus: &mut dyn BusDevice, pc: u32) -> Result<u32, String> {
+        // FIXME: Use separate branches for initial load delay application to improve performance
+        self.apply_load_delay_if_present();
+
         let mut addr = pc;
         while !self.finalized {
             let read_result = bus.read(addr, 32).map_err(|_| "Failed to read instr")?;
@@ -405,6 +489,7 @@ impl<'ctx> TranslationBlock<'ctx> {
         // Do not allow a delay action on the final instruction of the block, all must be
         // consumed
         assert!(self.delay_slot_hazard.is_none());
+        self.builder.build_return(None);
 
         Ok(addr)
     }
@@ -436,48 +521,6 @@ impl<'ctx> std::fmt::Display for TranslationBlock<'ctx> {
     }
 }
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct CpuState {
-    pub(super) gpr: [u32; 31],
-    pub(super) hi: u32,
-    pub(super) lo: u32,
-    pub(super) pc: u32,
-}
-
-impl CpuState {
-    pub fn set_pc(&mut self, pc: u32) {
-        self.pc = pc;
-    }
-
-    pub fn get_reg_val(&self, reg: u8) -> u32 {
-        if reg == 0 {
-            0
-        } else {
-            self.gpr[(reg - 1) as usize]
-        }
-    }
-
-    pub fn set_reg_val(&mut self, reg: u8, val: u32) {
-        if reg == 0 {
-            return;
-        }
-
-        self.gpr[(reg - 1) as usize] = val;
-    }
-}
-
-impl Default for CpuState {
-    fn default() -> Self {
-        CpuState {
-            gpr: [0; 31],
-            hi: 0,
-            lo: 0,
-            pc: 0,
-        }
-    }
-}
-
 #[no_mangle]
 pub(crate) unsafe extern "C" fn tb_mem_read(
     bus: *mut BusType,
@@ -490,7 +533,7 @@ pub(crate) unsafe extern "C" fn tb_mem_read(
 ) -> bool {
     match (*bus).read(addr, size) {
         Ok(v) => {
-            (*state).gpr[(reg - 1) as usize] = match v {
+            (*state).load_delay_register_value = match v {
                 SizedReadResult::Byte(b) => {
                     if sign_extend {
                         b as i8 as u32
@@ -507,6 +550,8 @@ pub(crate) unsafe extern "C" fn tb_mem_read(
                 }
                 SizedReadResult::Dword(d) => d,
             };
+
+            (*state).load_delay_register = reg as u32;
 
             true
         }
@@ -552,6 +597,8 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let timing_scale = 1_000;
 
     loop {
+        //println!("State: {:08x?}", state);
+
         let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
 
         if state.pc == prev_pc && tb.count_uniq == 2 {

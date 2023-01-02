@@ -60,10 +60,12 @@ int main()
 {
     int f;
 
-    for (int i = 3; i <= 31; ++i) f = reg_fib(i);
-    (void)f;
+    //for (int i = 3; i <= 31; ++i) f = reg_fib(i);
+    //(void)f;
 
     //waste_time();
+
+    f = fibonnaci(31);
 
     print_int(f);
     print("\r\n");

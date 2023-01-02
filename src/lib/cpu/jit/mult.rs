@@ -247,6 +247,8 @@ mod test {
 
         th.execute(&mut state).unwrap();
 
+        println!("{:?}", state);
+
         assert_eq!(state.hi, state.gpr[0]);
         assert_eq!(state.lo, state.gpr[1]);
 

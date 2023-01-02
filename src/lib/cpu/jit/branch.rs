@@ -33,7 +33,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         );
 
         tb.builder.build_store(pc_ptr, next_pc);
-        tb.builder.build_return(None);
         tb.finalized = true;
     }
 

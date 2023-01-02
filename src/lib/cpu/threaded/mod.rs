@@ -1,5 +1,5 @@
 use super::bus::{BusDevice, SizedReadResult};
-use super::jit::CpuState;
+use super::CpuState;
 use super::{decode, opcode};
 use std::rc::Rc;
 

@@ -1,9 +1,10 @@
 use std::str::FromStr;
 
 use libpsx::cpu::bus::{BusDevice, SizedReadResult};
+use libpsx::cpu::CpuState;
 use object::{Object, ObjectSection};
 
-use argparse::{ArgumentParser, Store, StoreTrue};
+use argparse::{ArgumentParser, Store};
 
 fn load_section(bus: &mut dyn BusDevice, addr: u32, buf: &[u8]) {
     let len = buf.len();
@@ -96,7 +97,7 @@ fn main() {
         );
     }
 
-    let mut state = libpsx::cpu::jit::CpuState::default();
+    let mut state = CpuState::default();
     state.set_pc(obj.entry() as u32);
 
     match exec_mode {

@@ -17,7 +17,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
 
         self.delay_slot_hazard = Some(|tb| {
-            tb.builder.build_return(None);
             tb.finalized = true;
         });
     }
@@ -46,7 +45,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
 
         self.delay_slot_hazard = Some(|tb| {
-            tb.builder.build_return(None);
             tb.finalized = true;
         });
     }
@@ -63,7 +61,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
 
         self.delay_slot_hazard = Some(|tb| {
-            tb.builder.build_return(None);
             tb.finalized = true;
         });
     }
@@ -94,7 +91,6 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
 
         self.delay_slot_hazard = Some(|tb| {
-            tb.builder.build_return(None);
             tb.finalized = true;
         });
     }

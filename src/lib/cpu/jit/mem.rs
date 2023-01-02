@@ -2,6 +2,10 @@ use super::decode;
 use super::TranslationBlock;
 
 impl<'ctx> TranslationBlock<'ctx> {
+    fn load_delay_slot_action<'a, 'b>(tb: &'a mut TranslationBlock<'b>) {
+        tb.apply_load_delay_if_present();
+    }
+
     pub(super) fn emit_load_sized(&mut self, size: u32, instr: &decode::MipsIInstr, sext: bool) {
         if self.finalized || instr.t_reg == 0 {
             self.instr_finished_emitting();
@@ -25,17 +29,32 @@ impl<'ctx> TranslationBlock<'ctx> {
         );
 
         let size_v = i32_type.const_int(size as u64, false);
-        let _read_success = self.mem_read(
+
+        // Finish emitting first, so that successive loads don't overwrite each other's save data
+        let count = self.count_uniq;
+        self.instr_finished_emitting();
+
+        let read_success = self.mem_read(
             addr.into(),
             size_v.into(),
             i8_type.const_int(instr.t_reg as u64, false).into(),
             bool_type.const_int(sext as u64, false).into(),
-            &format!("{}_{}_read", instr.opcode, self.count_uniq),
+            &format!("{}_{}_read", instr.opcode, count),
         );
 
         // FIXME: Check result of mem read
 
-        self.instr_finished_emitting();
+        // If the block is finished, then the load will complete at the beginning of the next block
+        if self.finalized {
+            return;
+        }
+
+        self.delay_slot_arg = Some(super::DelaySlotArg {
+            count,
+            immed: 0,
+            value: read_success.into(),
+        });
+        self.delay_slot_hazard = Some(Self::load_delay_slot_action);
     }
 
     pub(super) fn emit_lb(&mut self, instr: &decode::MipsIInstr) {
@@ -126,17 +145,17 @@ mod test {
     }
 
     #[test]
-    #[ignore = "not implemented"]
     fn jit_test_load_delay_slot() {
         let mut th = TestHarness::default();
         let mut state = crate::cpu::jit::CpuState::default();
 
         let addr = 0x1400;
         let val = 42;
+        let delay_imm = 10;
 
         th.push_instr("addiu", 0, 0, 1, addr, 0);
         th.push_instr("addiu", 0, 0, 2, val as u16, 0);
-        th.load32(3, 10);
+        th.load32(3, delay_imm);
         th.push_instr("sw", 0, 1, 2, 0, 0);
         th.push_instr("lw", 0, 1, 3, 0, 0);
         th.push_instr("addu", 4, 3, 0, 0, 0);
@@ -145,8 +164,39 @@ mod test {
         th.execute(&mut state).unwrap();
 
         assert_eq!(state.gpr[2], val);
-        assert_eq!(state.gpr[3], 10);
+        assert_eq!(state.gpr[3], delay_imm);
     }
+
+    #[test]
+    fn jit_test_load_in_branch_delay_slot() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let val = 42;
+        let delay_imm = 10;
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("addiu", 0, 0, 2, val as u16, 0);
+        th.load32(3, delay_imm);
+        th.push_instr("sw", 0, 1, 2, 0, 0);
+
+        // Manually insert branch, no need to call th.finish()
+        th.push_instr("bne", 0, 0, 0, 0, 0);
+        th.push_instr("lw", 0, 1, 3, 0, 0);
+
+        // Second execution point
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], delay_imm);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], val);
+    }
+
 
     #[test]
     fn jit_test_sb_lb() {
