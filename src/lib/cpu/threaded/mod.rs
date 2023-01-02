@@ -134,7 +134,6 @@ fn new_tb<'ctx>(
         module,
         ee,
         builder,
-        func,
         state_arg,
         bus_arg,
         mgr_arg,
@@ -164,8 +163,6 @@ pub(super) struct ThreadBlock<'ctx> {
     module: inkwell::module::Module<'ctx>,
     ee: inkwell::execution_engine::ExecutionEngine<'ctx>,
     builder: inkwell::builder::Builder<'ctx>,
-
-    func: inkwell::values::FunctionValue<'ctx>,
 
     state_arg: inkwell::values::PointerValue<'ctx>,
     bus_arg: inkwell::values::PointerValue<'ctx>,

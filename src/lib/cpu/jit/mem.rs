@@ -65,23 +65,31 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.emit_load_sized(8, instr, false);
     }
 
+    pub(super) fn emit_lh(&mut self, instr: &decode::MipsIInstr) {
+        self.emit_load_sized(16, instr, true);
+    }
+
+    pub(super) fn emit_lhu(&mut self, instr: &decode::MipsIInstr) {
+        self.emit_load_sized(16, instr, false);
+    }
+
     pub(super) fn emit_lw(&mut self, instr: &decode::MipsIInstr) {
         self.emit_load_sized(32, instr, false);
     }
 
-    pub(super) fn emit_sb(&mut self, instr: &decode::MipsIInstr) {
+    fn emit_store_sized(&mut self, size: u32, instr: &decode::MipsIInstr) {
         let i32_type = self.ctx.i32_type();
 
         let offset = i32_type.const_int(instr.immediate as u64, true);
 
-        let base_val = self.get_gpr_value(instr.s_reg, &format!("sb_{}", self.count_uniq));
+        let base_val = self.get_gpr_value(instr.s_reg, &format!("{}_{}", instr.opcode, self.count_uniq));
         let addr =
             self.builder
-                .build_int_add(base_val, offset, &format!("sb_{}_addr", self.count_uniq));
+                .build_int_add(base_val, offset, &format!("{}_{}_addr", instr.opcode, self.count_uniq));
 
-        let t_val = self.get_gpr_value(instr.t_reg, &format!("sb_{}", self.count_uniq));
+        let t_val = self.get_gpr_value(instr.t_reg, &format!("{}_{}", instr.opcode, self.count_uniq));
 
-        let size = i32_type.const_int(8, false);
+        let size = i32_type.const_int(size as u64, false);
         let _mem_res = self.mem_write(
             addr.into(),
             size.into(),
@@ -94,29 +102,16 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
     }
 
+    pub(super) fn emit_sb(&mut self, instr: &decode::MipsIInstr) {
+        self.emit_store_sized(8, instr);
+    }
+
+    pub(super) fn emit_sh(&mut self, instr: &decode::MipsIInstr) {
+        self.emit_store_sized(16, instr);
+    }
+
     pub(super) fn emit_sw(&mut self, instr: &decode::MipsIInstr) {
-        let i32_type = self.ctx.i32_type();
-
-        let offset = i32_type.const_int(instr.immediate as u64, true);
-
-        let base_val = self.get_gpr_value(instr.s_reg, &format!("sw_{}", self.count_uniq));
-        let addr =
-            self.builder
-                .build_int_add(base_val, offset, &format!("sw_{}_addr", self.count_uniq));
-
-        let t_val = self.get_gpr_value(instr.t_reg, &format!("sw_{}", self.count_uniq));
-
-        let size = i32_type.const_int(32, false);
-        let _mem_res = self.mem_write(
-            addr.into(),
-            size.into(),
-            t_val.into(),
-            &format!("sw_{}_write", self.count_uniq),
-        );
-
-        // FIXME: Check result of mem write
-
-        self.instr_finished_emitting();
+        self.emit_store_sized(32, instr);
     }
 }
 
@@ -215,6 +210,44 @@ mod test {
         th.execute(&mut state).unwrap();
 
         assert_eq!(state.gpr[2], val as u32);
+    }
+
+    #[test]
+    fn jit_test_sh_lh() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let val = -10;
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("addiu", 0, 0, 2, val as u16, 0);
+        th.push_instr("sh", 0, 1, 2, 0, 0);
+        th.push_instr("lh", 0, 1, 3, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], val as u32);
+    }
+
+    #[test]
+    fn jit_test_sh_lhu() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let val = -10;
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("addiu", 0, 0, 2, val as u16, 0);
+        th.push_instr("sh", 0, 1, 2, 0, 0);
+        th.push_instr("lhu", 0, 1, 3, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[2], val as u16 as u32);
     }
 
     #[test]

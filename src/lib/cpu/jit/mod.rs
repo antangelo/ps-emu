@@ -1,7 +1,7 @@
 use super::{decode, opcode, CpuState};
 use crate::cpu::bus::{BusDevice, SizedReadResult};
 use inkwell::values::AnyValue;
-use std::{collections, rc::Rc};
+use std::rc::Rc;
 
 #[cfg(test)]
 pub use super::test::harness;
@@ -11,7 +11,7 @@ mod immed;
 mod jump;
 mod mem;
 mod mult;
-mod register_ops;
+mod rtype;
 
 type BusType = crate::cpu::bus_vec::VecBus;
 type TbDynFunc<'ctx> =
@@ -379,24 +379,25 @@ impl<'ctx> TranslationBlock<'ctx> {
     fn emit_r_instr(&mut self, instr: &decode::MipsRInstr) {
         match instr.function {
             opcode::MipsFunction::Sll => self.emit_sll(instr),
-            opcode::MipsFunction::Sllv => self.emit_sllv(instr),
             opcode::MipsFunction::Srl => self.emit_srl(instr),
             opcode::MipsFunction::Sra => self.emit_sra(instr),
-            opcode::MipsFunction::Slrv => self.emit_slrv(instr),
+            opcode::MipsFunction::Sllv => self.emit_sllv(instr),
             opcode::MipsFunction::Srav => self.emit_srav(instr),
+            opcode::MipsFunction::Slrv => self.emit_slrv(instr),
             opcode::MipsFunction::Jr => self.emit_jr(instr),
             opcode::MipsFunction::Jalr => self.emit_jalr(instr),
+            opcode::MipsFunction::Mfhi => self.emit_mfhi(instr),
+            opcode::MipsFunction::Mthi => self.emit_mthi(instr),
+            opcode::MipsFunction::Mflo => self.emit_mflo(instr),
+            opcode::MipsFunction::Mtlo => self.emit_mtlo(instr),
+            opcode::MipsFunction::Mult => self.emit_mult(instr),
+            opcode::MipsFunction::MultU => self.emit_multu(instr),
+            opcode::MipsFunction::Div => self.emit_div(instr),
+            opcode::MipsFunction::DivU => self.emit_divu(instr),
             opcode::MipsFunction::Add => self.emit_add(instr),
             opcode::MipsFunction::AddU => self.emit_addu(instr),
             opcode::MipsFunction::Sub => self.emit_sub(instr),
             opcode::MipsFunction::Subu => self.emit_subu(instr),
-            opcode::MipsFunction::Mflo => self.emit_mflo(instr),
-            opcode::MipsFunction::Mfhi => self.emit_mfhi(instr),
-            opcode::MipsFunction::Mtlo => self.emit_mtlo(instr),
-            opcode::MipsFunction::Mthi => self.emit_mthi(instr),
-            opcode::MipsFunction::DivU => self.emit_divu(instr),
-            opcode::MipsFunction::Mult => self.emit_mult(instr),
-            opcode::MipsFunction::MultU => self.emit_multu(instr),
             opcode::MipsFunction::Or => self.emit_or(instr),
             opcode::MipsFunction::Nor => self.emit_nor(instr),
             opcode::MipsFunction::Xor => self.emit_xor(instr),
@@ -419,18 +420,22 @@ impl<'ctx> TranslationBlock<'ctx> {
         match instr.opcode {
             opcode::MipsOpcode::RegisterImm => self.emit_special_branch(instr),
             opcode::MipsOpcode::Beq => self.emit_beq(instr),
-            opcode::MipsOpcode::Bgtz => self.emit_bgtz(instr),
             opcode::MipsOpcode::Bne => self.emit_bne(instr),
+            opcode::MipsOpcode::Bgtz => self.emit_bgtz(instr),
+            opcode::MipsOpcode::AddI => self.emit_addiu(instr), // FIXME: Handle addi overflow
             opcode::MipsOpcode::AddIU => self.emit_addiu(instr),
+            opcode::MipsOpcode::SltI => self.emit_slti(instr),
+            opcode::MipsOpcode::SltIU => self.emit_sltiu(instr),
             opcode::MipsOpcode::OrI => self.emit_ori(instr),
             opcode::MipsOpcode::Lui => self.emit_lui(instr),
             opcode::MipsOpcode::Lb => self.emit_lb(instr),
             opcode::MipsOpcode::Lbu => self.emit_lbu(instr),
+            opcode::MipsOpcode::Lh => self.emit_lh(instr),
+            opcode::MipsOpcode::Lhu => self.emit_lhu(instr),
             opcode::MipsOpcode::Lw => self.emit_lw(instr),
             opcode::MipsOpcode::Sb => self.emit_sb(instr),
+            opcode::MipsOpcode::Sh => self.emit_sh(instr),
             opcode::MipsOpcode::Sw => self.emit_sw(instr),
-            opcode::MipsOpcode::SltI => self.emit_slti(instr),
-            opcode::MipsOpcode::SltIU => self.emit_sltiu(instr),
             _ => panic!("Not implemented: {}", instr.opcode),
         }
     }
@@ -597,8 +602,6 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let timing_scale = 1_000;
 
     loop {
-        //println!("State: {:08x?}", state);
-
         let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
 
         if state.pc == prev_pc && tb.count_uniq == 2 {

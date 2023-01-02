@@ -83,6 +83,29 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
     }
 
+    pub(super) fn emit_div(&mut self, instr: &decode::MipsRInstr) {
+        let s_reg = self.get_gpr_value(instr.s_reg, &format!("div_{}_s", self.count_uniq));
+        let t_reg = self.get_gpr_value(instr.t_reg, &format!("div_{}_t", self.count_uniq));
+
+        let div = self.builder.build_int_signed_div(
+            s_reg,
+            t_reg,
+            &format!("divu_{}_quotient", self.count_uniq),
+        );
+        let lo = self.gep_lo(&format!("div_{}_lo", self.count_uniq));
+        self.builder.build_store(lo, div);
+
+        let modulo = self.builder.build_int_signed_rem(
+            s_reg,
+            t_reg,
+            &format!("div_{}_mod", self.count_uniq),
+        );
+        let hi = self.gep_hi(&format!("div_{}_hi", self.count_uniq));
+        self.builder.build_store(hi, modulo);
+
+        self.instr_finished_emitting();
+    }
+
     pub(super) fn emit_mult(&mut self, instr: &decode::MipsRInstr) {
         let s_reg = self.get_gpr_value(instr.s_reg, &format!("mult_{}_s", self.count_uniq));
         let t_reg = self.get_gpr_value(instr.t_reg, &format!("mult_{}_t", self.count_uniq));

@@ -1,4 +1,4 @@
-use super::{BusType, CpuState, MipsIInstr, MipsRInstr};
+use super::{BusType, CpuState, MipsRInstr};
 
 pub(super) fn interpret_mflo(
     instr: &MipsRInstr,
