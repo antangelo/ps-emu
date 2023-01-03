@@ -41,6 +41,7 @@ pub struct TranslationBlock<'ctx> {
 
     delay_slot_hazard: Option<fn(&mut TranslationBlock)>,
     delay_slot_arg: Option<DelaySlotArg<'ctx>>,
+    delay_slot_load_register: Option<u8>,
 
     tb_func: Option<inkwell::execution_engine::JitFunction<'ctx, TbDynFunc<'ctx>>>,
 }
@@ -150,6 +151,7 @@ fn new_tb<'ctx>(
         mgr_arg,
         delay_slot_hazard: None,
         delay_slot_arg: None,
+        delay_slot_load_register: None,
         tb_func: None,
     })
 }
@@ -228,14 +230,23 @@ impl<'ctx> TranslationBlock<'ctx> {
             .unwrap()
     }
 
+    fn gep_load_delay_register(&self, prefix: &str) -> inkwell::values::PointerValue<'ctx> {
+        self.builder
+            .build_struct_gep(self.state_arg, 34, &format!("{}_delay_reg", prefix))
+            .unwrap()
+    }
+
+    fn gep_load_delay_value(&self, prefix: &str) -> inkwell::values::PointerValue<'ctx> {
+        self.builder
+            .build_struct_gep(self.state_arg, 35, &format!("{}_delay_value", prefix))
+            .unwrap()
+    }
+
     fn apply_load_delay_if_present(&mut self) {
         let i32_type = self.ctx.i32_type();
         let i64_type = self.ctx.i64_type();
 
-        let register = self
-            .builder
-            .build_struct_gep(self.state_arg, 34, "ld_delay_reg")
-            .unwrap();
+        let register = self.gep_load_delay_register("ld");
 
         // FIXME: Assert that register_val is in [0, 31]
         let register_val = self.builder.build_load(register, "ld_delay_reg_val");
@@ -290,14 +301,11 @@ impl<'ctx> TranslationBlock<'ctx> {
             "ld_state_reg_ptr",
         );
 
-        let load_value_ptr = self
-            .builder
-            .build_struct_gep(self.state_arg, 35, "ld_delay_value")
-            .unwrap();
+        let load_value_ptr = self.gep_load_delay_value("ld");
 
         // Select the delay value if the delay reg is set (within [1, 31]), otherwise reload the
         // same value that's currently in the register
-        // FIXME: When the TB prologue uses a branching version of this, we can remove this select 
+        // FIXME: When the TB prologue uses a branching version of this, we can remove this select
         // since this path will only be invoked by a delay slot action when the load register is
         // set.
         let reg_ptr_select = self
@@ -429,10 +437,12 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsOpcode::OrI => self.emit_ori(instr),
             opcode::MipsOpcode::Lui => self.emit_lui(instr),
             opcode::MipsOpcode::Lb => self.emit_lb(instr),
-            opcode::MipsOpcode::Lbu => self.emit_lbu(instr),
             opcode::MipsOpcode::Lh => self.emit_lh(instr),
-            opcode::MipsOpcode::Lhu => self.emit_lhu(instr),
+            opcode::MipsOpcode::Lwl => self.emit_lwl(instr),
             opcode::MipsOpcode::Lw => self.emit_lw(instr),
+            opcode::MipsOpcode::Lbu => self.emit_lbu(instr),
+            opcode::MipsOpcode::Lhu => self.emit_lhu(instr),
+            opcode::MipsOpcode::Lwr => self.emit_lwr(instr),
             opcode::MipsOpcode::Sb => self.emit_sb(instr),
             opcode::MipsOpcode::Sh => self.emit_sh(instr),
             opcode::MipsOpcode::Sw => self.emit_sw(instr),
@@ -463,6 +473,7 @@ impl<'ctx> TranslationBlock<'ctx> {
                     decode::MipsInstr::IType(i) => self.emit_i_instr(&i),
                     decode::MipsInstr::JType(j) => self.emit_j_instr(&j),
                     _ => {
+                        // FIXME: Raise invalid instruction exception
                         self.emit_r_instr(&decode::MipsRInstr {
                             s_reg: 0,
                             t_reg: 0,

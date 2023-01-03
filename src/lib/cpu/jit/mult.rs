@@ -64,21 +64,56 @@ impl<'ctx> TranslationBlock<'ctx> {
         let s_reg = self.get_gpr_value(instr.s_reg, &format!("divu_{}_s", self.count_uniq));
         let t_reg = self.get_gpr_value(instr.t_reg, &format!("divu_{}_t", self.count_uniq));
 
+        let i32_type = self.ctx.i32_type();
+        let div_by_zero = self.builder.build_int_compare(
+            inkwell::IntPredicate::EQ,
+            i32_type.const_zero(),
+            t_reg,
+            &format!("divu_{}_by_zero", self.count_uniq),
+        );
+
+        // Since LLVM's udiv by zero will be undefined, opt to always provide a valid divisor, even
+        // when the result will be thrown away. LLVM should not be computing the quotient in any
+        // case, but I'm not going to rely on that behavior.
+        let divisor = self
+            .builder
+            .build_select(
+                div_by_zero,
+                i32_type.const_int(1, false),
+                t_reg,
+                &format!("divu_{}_divisor", self.count_uniq),
+            )
+            .into_int_value();
+
         let div = self.builder.build_int_unsigned_div(
             s_reg,
-            t_reg,
+            divisor,
             &format!("divu_{}_quotient", self.count_uniq),
         );
+
         let lo = self.gep_lo(&format!("divu_{}_lo", self.count_uniq));
-        self.builder.build_store(lo, div);
+        let lo_result = self.builder.build_select(
+            div_by_zero,
+            i32_type.const_all_ones(),
+            div,
+            &format!("divu_{}_lo_res", self.count_uniq),
+        );
+        self.builder.build_store(lo, lo_result);
 
         let modulo = self.builder.build_int_unsigned_rem(
             s_reg,
-            t_reg,
+            divisor,
             &format!("divu_{}_mod", self.count_uniq),
         );
+
         let hi = self.gep_hi(&format!("divu_{}_hi", self.count_uniq));
-        self.builder.build_store(hi, modulo);
+        let hi_result = self.builder.build_select(
+            div_by_zero,
+            s_reg,
+            modulo,
+            &format!("divu_{}_hi_res", self.count_uniq),
+        );
+        self.builder.build_store(hi, hi_result);
 
         self.instr_finished_emitting();
     }
@@ -87,21 +122,56 @@ impl<'ctx> TranslationBlock<'ctx> {
         let s_reg = self.get_gpr_value(instr.s_reg, &format!("div_{}_s", self.count_uniq));
         let t_reg = self.get_gpr_value(instr.t_reg, &format!("div_{}_t", self.count_uniq));
 
+        let i32_type = self.ctx.i32_type();
+        let div_by_zero = self.builder.build_int_compare(
+            inkwell::IntPredicate::EQ,
+            i32_type.const_zero(),
+            t_reg,
+            &format!("div_{}_by_zero", self.count_uniq),
+        );
+
+        // Since LLVM's sdiv by zero will be undefined, opt to always provide a valid divisor, even
+        // when the result will be thrown away. LLVM should not be computing the quotient in any
+        // case, but I'm not going to rely on that behavior.
+        let divisor = self
+            .builder
+            .build_select(
+                div_by_zero,
+                i32_type.const_int(1, false),
+                t_reg,
+                &format!("div_{}_divisor", self.count_uniq),
+            )
+            .into_int_value();
+
         let div = self.builder.build_int_signed_div(
             s_reg,
-            t_reg,
-            &format!("divu_{}_quotient", self.count_uniq),
+            divisor,
+            &format!("div_{}_quotient", self.count_uniq),
         );
+
         let lo = self.gep_lo(&format!("div_{}_lo", self.count_uniq));
-        self.builder.build_store(lo, div);
+        let lo_result = self.builder.build_select(
+            div_by_zero,
+            i32_type.const_all_ones(),
+            div,
+            &format!("div_{}_lo_res", self.count_uniq),
+        );
+        self.builder.build_store(lo, lo_result);
 
         let modulo = self.builder.build_int_signed_rem(
             s_reg,
-            t_reg,
+            divisor,
             &format!("div_{}_mod", self.count_uniq),
         );
+
         let hi = self.gep_hi(&format!("div_{}_hi", self.count_uniq));
-        self.builder.build_store(hi, modulo);
+        let hi_result = self.builder.build_select(
+            div_by_zero,
+            s_reg,
+            modulo,
+            &format!("div_{}_hi_res", self.count_uniq),
+        );
+        self.builder.build_store(hi, hi_result);
 
         self.instr_finished_emitting();
     }
@@ -226,6 +296,58 @@ mod test {
 
         assert_eq!(state.hi, 0xffffffff);
         assert_eq!(state.lo, 0x0);
+    }
+
+    #[test]
+    fn jit_test_divu_by_zero() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let numerator = 5;
+        let denominator = 0;
+
+        th.load32(1, numerator);
+        th.load32(2, denominator);
+        th.push_instr("divu", 0, 1, 2, 0, 0);
+        th.push_instr("mfhi", 1, 0, 0, 0, 0);
+        th.push_instr("mflo", 2, 0, 0, 0, 0);
+
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.hi, state.gpr[0]);
+        assert_eq!(state.lo, state.gpr[1]);
+
+        // This is the defined result of division by zero on the PS1
+        assert_eq!(state.hi, numerator);
+        assert_eq!(state.lo, (-1 as i32) as u32);
+    }
+
+    #[test]
+    fn jit_test_div_by_zero() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let numerator = 5;
+        let denominator = 0;
+
+        th.load32(1, numerator);
+        th.load32(2, denominator);
+        th.push_instr("div", 0, 1, 2, 0, 0);
+        th.push_instr("mfhi", 1, 0, 0, 0, 0);
+        th.push_instr("mflo", 2, 0, 0, 0, 0);
+
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.hi, state.gpr[0]);
+        assert_eq!(state.lo, state.gpr[1]);
+
+        // This is the defined result of division by zero on the PS1
+        assert_eq!(state.hi, numerator);
+        assert_eq!(state.lo, (-1 as i32) as u32);
     }
 
     #[test]

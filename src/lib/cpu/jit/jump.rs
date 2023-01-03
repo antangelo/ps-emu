@@ -10,11 +10,21 @@ impl<'ctx> TranslationBlock<'ctx> {
         let i32_type = self.ctx.i32_type();
 
         let pc = self.gep_pc(&format!("j_pc_gep_{}", self.count_uniq));
-        let pc_val = self.builder.build_load(pc, &format!("j_pc_{}", self.count_uniq));
-        let pc_mask = self.builder.build_and(pc_val.into_int_value(), i32_type.const_int(0xe000_0000, false).into(), &format!("j_pc_mask_{}", self.count_uniq));
+        let pc_val = self
+            .builder
+            .build_load(pc, &format!("j_pc_{}", self.count_uniq));
+        let pc_mask = self.builder.build_and(
+            pc_val.into_int_value(),
+            i32_type.const_int(0xe000_0000, false).into(),
+            &format!("j_pc_mask_{}", self.count_uniq),
+        );
 
         let target_addr = i32_type.const_int((instr.target << 2) as u64, false);
-        let target_v = self.builder.build_or(target_addr, pc_mask, &format!("j_target_{}", self.count_uniq));
+        let target_v = self.builder.build_or(
+            target_addr,
+            pc_mask,
+            &format!("j_target_{}", self.count_uniq),
+        );
 
         self.builder.build_store(pc, target_v);
 
@@ -43,8 +53,16 @@ impl<'ctx> TranslationBlock<'ctx> {
         );
 
         let target_addr = i32_type.const_int((instr.target << 2) as u64, false);
-        let pc_mask = self.builder.build_and(pc_val.into_int_value(), i32_type.const_int(0xe000_0000, false).into(), &format!("j_pc_mask_{}", self.count_uniq));
-        let target_v = self.builder.build_or(target_addr, pc_mask, &format!("j_target_{}", self.count_uniq));
+        let pc_mask = self.builder.build_and(
+            pc_val.into_int_value(),
+            i32_type.const_int(0xe000_0000, false).into(),
+            &format!("j_pc_mask_{}", self.count_uniq),
+        );
+        let target_v = self.builder.build_or(
+            target_addr,
+            pc_mask,
+            &format!("j_target_{}", self.count_uniq),
+        );
 
         self.builder.build_store(ra, ra_val);
         self.builder.build_store(pc, target_v);
