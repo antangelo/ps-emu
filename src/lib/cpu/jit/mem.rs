@@ -623,4 +623,28 @@ mod test {
         assert_eq!(state.gpr[3], delay_val as u32);
         assert_eq!(state.gpr[2], 0xdeadbeef);
     }
+
+    #[test]
+    fn jit_test_swr_swl() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+
+        th.load32(10, 0xdeadbeef);
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("swl", 0, 1, 10, 1, 0);
+        th.push_instr("swr", 0, 1, 10, 6, 0);
+
+        th.push_instr("lw", 0, 1, 2, 0, 0);
+        th.push_instr("lw", 0, 1, 3, 4, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        println!("{:08x?}", state);
+        assert_eq!(state.gpr[1], 0xdead_0000);
+        assert_eq!(state.gpr[2], 0x0000_beef);
+    }
 }
