@@ -20,9 +20,9 @@ impl<'ctx> TranslationBlock<'ctx> {
         let add_res =
             self.builder
                 .build_int_add(src_reg, const_imm, &format!("addiu_{}", self.count_uniq));
-        self.builder.build_store(dest_reg, add_res);
 
         self.instr_finished_emitting();
+        self.builder.build_store(dest_reg, add_res);
     }
 
     pub(super) fn emit_andi(&mut self, instr: &decode::MipsIInstr) {
@@ -42,9 +42,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             self.builder
                 .build_and(s_val, immed, &format!("andi_{}_res", self.count_uniq));
 
-        self.builder.build_store(t_reg, and_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(t_reg, and_val);
     }
 
     pub(super) fn emit_ori(&mut self, instr: &decode::MipsIInstr) {
@@ -64,9 +63,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             .builder
             .build_or(s_val, immed, &format!("ori_{}_res", self.count_uniq));
 
-        self.builder.build_store(t_reg, or_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(t_reg, or_val);
     }
 
     pub(super) fn emit_xori(&mut self, instr: &decode::MipsIInstr) {
@@ -86,9 +84,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             self.builder
                 .build_xor(s_val, immed, &format!("xori_{}_res", self.count_uniq));
 
-        self.builder.build_store(t_reg, xor_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(t_reg, xor_val);
     }
 
     pub(super) fn emit_slti(&mut self, instr: &decode::MipsIInstr) {
@@ -115,8 +112,8 @@ impl<'ctx> TranslationBlock<'ctx> {
         );
         let t_reg = self.gep_gp_register(instr.t_reg, &format!("slti_{}_t_reg", self.count_uniq));
 
-        self.builder.build_store(t_reg, cmp_zext);
         self.instr_finished_emitting();
+        self.builder.build_store(t_reg, cmp_zext);
     }
 
     pub(super) fn emit_sltiu(&mut self, instr: &decode::MipsIInstr) {
@@ -143,8 +140,8 @@ impl<'ctx> TranslationBlock<'ctx> {
         );
         let t_reg = self.gep_gp_register(instr.t_reg, &format!("sltiu_{}_t_reg", self.count_uniq));
 
-        self.builder.build_store(t_reg, cmp_zext);
         self.instr_finished_emitting();
+        self.builder.build_store(t_reg, cmp_zext);
     }
 
     pub(super) fn emit_lui(&mut self, instr: &decode::MipsIInstr) {
@@ -158,9 +155,8 @@ impl<'ctx> TranslationBlock<'ctx> {
         let t_reg = self.gep_gp_register(instr.t_reg, &format!("lui_{}_t_reg", self.count_uniq));
         let immed = i32_type.const_int((instr.immediate as u64) << 16, true);
 
-        self.builder.build_store(t_reg, immed);
-
         self.instr_finished_emitting();
+        self.builder.build_store(t_reg, immed);
     }
 }
 
@@ -174,6 +170,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
         let val: u32 = 42;
 
+        th.push_dummy_load(1);
         th.push_instr("addiu", 0, 0, 1, val as u16, 0);
         th.finish();
 
@@ -189,6 +186,7 @@ mod test {
         let val: u32 = 42;
 
         th.push_instr("ori", 0, 0, 1, val as u16, 0);
+        th.push_dummy_load(1);
         th.push_instr("andi", 0, 1, 1, 0xf, 0);
         th.finish();
 
@@ -203,6 +201,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
         let val: u32 = 42;
 
+        th.push_dummy_load(1);
         th.push_instr("ori", 0, 0, 1, val as u16, 0);
         th.finish();
 
@@ -218,6 +217,7 @@ mod test {
         let val: u32 = 42;
 
         th.push_instr("ori", 0, 0, 1, val as u16, 0);
+        th.push_dummy_load(1);
         th.push_instr("xori", 0, 1, 1, val as u16, 0);
         th.finish();
 
@@ -232,6 +232,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.push_instr("ori", 0, 0, 1, 42, 0);
+        th.push_dummy_load(2);
         th.push_instr("sltiu", 0, 1, 2, 100, 0);
         th.finish();
 
@@ -247,6 +248,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.push_instr("ori", 0, 0, 1, 42, 0);
+        th.push_dummy_load(2);
         th.push_instr("slti", 0, 1, 2, 100, 0);
         th.finish();
 
@@ -261,6 +263,7 @@ mod test {
         let mut th = TestHarness::default();
         let mut state = crate::cpu::jit::CpuState::default();
 
+        th.push_dummy_load(1);
         th.push_instr("lui", 0, 0, 1, 0x1000, 0);
         th.finish();
 

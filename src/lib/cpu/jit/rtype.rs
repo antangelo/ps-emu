@@ -25,9 +25,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             &format!("{}_{}_res", instr.function, self.count_uniq),
         );
 
-        self.builder.build_store(d_reg, sll_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, sll_val);
     }
 
     pub(super) fn emit_sllv(&mut self, instr: &decode::MipsRInstr) {
@@ -64,9 +63,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             &format!("{}_{}_res", instr.function, self.count_uniq),
         );
 
-        self.builder.build_store(d_reg, sll_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, sll_val);
     }
 
     pub(super) fn emit_srl(&mut self, instr: &decode::MipsRInstr) {
@@ -107,9 +105,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             self.builder
                 .build_int_add(s_val, t_val, &format!("add_{}_res", self.count_uniq));
 
-        self.builder.build_store(d_reg, add_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, add_val);
     }
 
     pub(super) fn emit_addu(&mut self, instr: &decode::MipsRInstr) {
@@ -127,9 +124,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             self.builder
                 .build_int_add(s_val, t_val, &format!("addu_{}_res", self.count_uniq));
 
-        self.builder.build_store(d_reg, add_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, add_val);
     }
 
     pub(super) fn emit_sub(&mut self, instr: &decode::MipsRInstr) {
@@ -148,9 +144,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             self.builder
                 .build_int_sub(s_val, t_val, &format!("sub_{}_res", self.count_uniq));
 
-        self.builder.build_store(d_reg, sub_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, sub_val);
     }
 
     pub(super) fn emit_subu(&mut self, instr: &decode::MipsRInstr) {
@@ -168,9 +163,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             self.builder
                 .build_int_sub(s_val, t_val, &format!("sub_{}_res", self.count_uniq));
 
-        self.builder.build_store(d_reg, sub_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, sub_val);
     }
 
     pub(super) fn emit_or(&mut self, instr: &decode::MipsRInstr) {
@@ -188,9 +182,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             .builder
             .build_or(s_val, t_val, &format!("or_{}_res", self.count_uniq));
 
-        self.builder.build_store(d_reg, or_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, or_val);
     }
 
     pub(super) fn emit_nor(&mut self, instr: &decode::MipsRInstr) {
@@ -212,9 +205,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             .builder
             .build_not(or_val, &format!("nor_{}_nor", self.count_uniq));
 
-        self.builder.build_store(d_reg, nor_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, nor_val);
     }
 
     pub(super) fn emit_xor(&mut self, instr: &decode::MipsRInstr) {
@@ -232,9 +224,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             .builder
             .build_xor(s_val, t_val, &format!("xor_{}_res", self.count_uniq));
 
-        self.builder.build_store(d_reg, xor_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, xor_val);
     }
 
     pub(super) fn emit_and(&mut self, instr: &decode::MipsRInstr) {
@@ -252,9 +243,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             .builder
             .build_and(s_val, t_val, &format!("and_{}_res", self.count_uniq));
 
-        self.builder.build_store(d_reg, and_val);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, and_val);
     }
 
     fn emit_int_compare(&mut self, instr: &decode::MipsRInstr, pred: inkwell::IntPredicate) {
@@ -279,9 +269,8 @@ impl<'ctx> TranslationBlock<'ctx> {
         );
 
         let d_reg = self.gep_gp_register(instr.d_reg, &format!("sltu_{}_d", self.count_uniq));
-        self.builder.build_store(d_reg, cmp_zext);
-
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, cmp_zext);
     }
 
     pub(super) fn emit_sltu(&mut self, instr: &decode::MipsRInstr) {
@@ -304,6 +293,7 @@ mod test {
 
         th.push_instr("addiu", 0, 0, 1, 40, 0);
         th.push_instr("addiu", 0, 0, 2, 2, 0);
+        th.push_dummy_load(1);
         th.push_instr("addu", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -319,6 +309,7 @@ mod test {
 
         th.push_instr("addiu", 0, 0, 1, 40, 0);
         th.push_instr("addiu", 0, 0, 2, 2, 0);
+        th.push_dummy_load(1);
         th.push_instr("add", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -334,6 +325,7 @@ mod test {
 
         th.load32(1, 10);
         th.load32(2, 5);
+        th.push_dummy_load(1);
         th.push_instr("subu", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -349,6 +341,7 @@ mod test {
 
         th.load32(1, 10);
         th.load32(2, 5);
+        th.push_dummy_load(1);
         th.push_instr("sub", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -364,6 +357,7 @@ mod test {
 
         th.push_instr("addiu", 0, 0, 1, 1, 0);
         th.push_instr("addiu", 0, 0, 2, 2, 0);
+        th.push_dummy_load(1);
         th.push_instr("or", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -379,6 +373,7 @@ mod test {
 
         th.load32(1, 0x0000ffff);
         th.load32(2, 0xff000000);
+        th.push_dummy_load(1);
         th.push_instr("nor", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -394,6 +389,7 @@ mod test {
 
         th.load32(1, 0x8);
         th.load32(2, 0x9);
+        th.push_dummy_load(1);
         th.push_instr("xor", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -409,6 +405,7 @@ mod test {
 
         th.load32(1, 0x8);
         th.load32(2, 0x9);
+        th.push_dummy_load(1);
         th.push_instr("and", 1, 1, 2, 0, 0);
         th.finish();
 
@@ -423,6 +420,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_dummy_load(1);
         th.push_instr("sll", 1, 0, 1, 1, 0);
         th.finish();
 
@@ -437,6 +435,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.load32(1, 4);
+        th.push_dummy_load(1);
         th.push_instr("srl", 1, 0, 1, 1, 0);
         th.finish();
 
@@ -451,6 +450,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.load32(1, -2 as i32 as u32);
+        th.push_dummy_load(1);
         th.push_instr("sra", 1, 0, 1, 1, 0);
         th.finish();
 
@@ -466,6 +466,7 @@ mod test {
 
         th.load32(1, 1);
         th.load32(2, 2);
+        th.push_dummy_load(1);
         th.push_instr("sllv", 1, 2, 1, 0, 0);
         th.finish();
 
@@ -481,6 +482,7 @@ mod test {
 
         th.load32(1, 4);
         th.load32(2, 2);
+        th.push_dummy_load(1);
         th.push_instr("slrv", 1, 2, 1, 0, 0);
         th.finish();
 
@@ -496,6 +498,7 @@ mod test {
 
         th.load32(1, -2 as i32 as u32);
         th.load32(2, 1);
+        th.push_dummy_load(1);
         th.push_instr("srav", 1, 2, 1, 0, 0);
         th.finish();
 
@@ -510,6 +513,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_dummy_load(1);
         th.push_instr("sltu", 1, 1, 0, 0, 0);
         th.finish();
 
@@ -524,6 +528,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_dummy_load(1);
         th.push_instr("sltu", 1, 0, 1, 0, 0);
         th.finish();
 
@@ -538,6 +543,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_dummy_load(1);
         th.push_instr("slt", 1, 1, 0, 0, 0);
         th.finish();
 
@@ -552,6 +558,7 @@ mod test {
         let mut state = crate::cpu::jit::CpuState::default();
 
         th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_dummy_load(1);
         th.push_instr("slt", 1, 0, 1, 0, 0);
         th.finish();
 

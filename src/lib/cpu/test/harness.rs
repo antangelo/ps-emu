@@ -26,6 +26,12 @@ impl Default for TestHarness {
 }
 
 impl TestHarness {
+    pub(crate) fn push_dummy_load(&mut self, target_reg: u8) {
+        // This is a dummy load with the intention to overwrite the target register in the delay
+        // slot if the register write staging is not done correctly.
+        self.push_instr("lw", 0, 0, target_reg, 0x2000 - 0x4, 0);
+    }
+
     pub(crate) fn push_instr(&mut self, op: &str, d: u8, s: u8, t: u8, imm: u16, tgt: u32) {
         let instr_bin = decode::mips_encode_str(op, d, s, t, imm, tgt).unwrap();
         self.bus
@@ -59,7 +65,7 @@ impl TestHarness {
         Ok(())
     }
 
-    pub(crate) fn execute_generic(
+    pub(crate) fn _execute_generic(
         &mut self,
         state: &mut CpuState,
         executor: Box<dyn Fn(&mut CpuState, &mut VecBus) -> Result<(), String>>,

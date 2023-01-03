@@ -13,9 +13,9 @@ impl<'ctx> TranslationBlock<'ctx> {
         let lo = self
             .builder
             .build_load(lo_ptr, &format!("mflo_{}_lo", self.count_uniq));
-        self.builder.build_store(d_reg, lo);
 
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, lo);
     }
 
     pub(super) fn emit_mfhi(&mut self, instr: &decode::MipsRInstr) {
@@ -29,9 +29,9 @@ impl<'ctx> TranslationBlock<'ctx> {
         let hi = self
             .builder
             .build_load(hi_ptr, &format!("mfhi_{}_hi", self.count_uniq));
-        self.builder.build_store(d_reg, hi);
 
         self.instr_finished_emitting();
+        self.builder.build_store(d_reg, hi);
     }
 
     pub(super) fn emit_mtlo(&mut self, instr: &decode::MipsRInstr) {
@@ -284,7 +284,11 @@ mod test {
         th.load32(1, multiplicand);
         th.load32(2, multiplier);
         th.push_instr("mult", 0, 1, 2, 0, 0);
+
+        th.push_dummy_load(1);
         th.push_instr("mfhi", 1, 0, 0, 0, 0);
+
+        th.push_dummy_load(2);
         th.push_instr("mflo", 2, 0, 0, 0, 0);
 
         th.finish();
