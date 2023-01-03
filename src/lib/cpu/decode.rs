@@ -1,4 +1,4 @@
-use super::opcode::{MipsBranchSpecial, MipsFunction, MipsOpcode};
+use super::opcode::{MipsBranchSpecial, MipsCopOperation, MipsFunction, MipsOpcode};
 
 #[derive(Debug)]
 pub struct MipsRInstr {
@@ -18,6 +18,24 @@ pub struct MipsIInstr {
 }
 
 #[derive(Debug)]
+pub struct MipsCopInstr {
+    pub opcode: MipsOpcode,
+    pub cop: u8,
+    pub operation: MipsCopOperation,
+    pub t_reg: u8,
+    pub d_reg: u8,
+}
+
+#[derive(Debug)]
+pub struct MipsCopMemInstr {
+    pub opcode: MipsOpcode,
+    pub cop: u8,
+    pub base: u8,
+    pub t_reg: u8,
+    pub immediate: u16,
+}
+
+#[derive(Debug)]
 pub struct MipsJInstr {
     pub opcode: MipsOpcode,
     pub target: u32,
@@ -28,6 +46,8 @@ pub enum MipsInstr {
     RType(MipsRInstr),
     IType(MipsIInstr),
     JType(MipsJInstr),
+    Cop(MipsCopInstr),
+    CopMem(MipsCopMemInstr),
     Invalid,
 }
 
@@ -78,8 +98,58 @@ fn mips_decode_opcode(opcode: MipsOpcode, instr_raw: u32) -> MipsInstr {
     }
 }
 
+fn mips_decode_cop_mem(opcode: MipsOpcode, cop: u8, instr_raw: u32) -> MipsInstr {
+    let base = ((instr_raw >> 21) & 0x1f) as u8;
+    let t_reg = ((instr_raw >> 16) & 0x1f) as u8;
+    let immediate = (instr_raw & 0xffff) as u16;
+
+    MipsInstr::CopMem(MipsCopMemInstr {
+        opcode,
+        cop,
+        base,
+        t_reg,
+        immediate,
+    })
+}
+
+fn mips_decode_cop(cop: u8, instr_raw: u32) -> MipsInstr {
+    let operation = num::FromPrimitive::from_u8(((instr_raw >> 21) & 0x1f) as u8);
+
+    if let Some(operation) = operation {
+        let t_reg = ((instr_raw >> 16) & 0x1f) as u8;
+        let d_reg = ((instr_raw >> 11) & 0x1f) as u8;
+
+        MipsInstr::Cop(MipsCopInstr {
+            opcode: MipsOpcode::CoProc,
+            cop,
+            operation,
+            t_reg,
+            d_reg,
+        })
+    } else {
+        MipsInstr::Invalid
+    }
+}
+
 pub fn mips_decode(instr_raw: u32) -> MipsInstr {
-    let opcode = num::FromPrimitive::from_u32(instr_raw >> 26);
+    let opcode_raw = instr_raw >> 26;
+
+    if let Some(copcode) = num::FromPrimitive::from_u32(opcode_raw & 0x3c) {
+        let cop_num = (opcode_raw & 0x3) as u8;
+        let cop_decode = match copcode {
+            MipsOpcode::CoProc => Some(mips_decode_cop(cop_num, instr_raw)),
+            MipsOpcode::LCoProc | MipsOpcode::SwCoProc => {
+                Some(mips_decode_cop_mem(copcode, cop_num, instr_raw))
+            }
+            _ => None,
+        };
+
+        if let Some(decoded_instr) = cop_decode {
+            return decoded_instr;
+        }
+    }
+
+    let opcode = num::FromPrimitive::from_u32(opcode_raw);
 
     match opcode {
         Some(op) => mips_decode_opcode(op, instr_raw),
@@ -106,6 +176,24 @@ fn mips_encode_itype(instr: &MipsIInstr) -> u32 {
     res
 }
 
+fn mips_encode_cop_mem(instr: &MipsCopMemInstr) -> u32 {
+    let mut res: u32 = ((instr.opcode as u32) | (instr.cop as u32)) << 26;
+    res |= (instr.base as u32) << 21;
+    res |= (instr.t_reg as u32) << 16;
+    res |= instr.immediate as u32;
+
+    res
+}
+
+fn mips_encode_cop(instr: &MipsCopInstr) -> u32 {
+    let mut res: u32 = ((instr.opcode as u32) | (instr.cop as u32)) << 26;
+    res |= (instr.d_reg as u32) << 11;
+    res |= (instr.t_reg as u32) << 16;
+    res |= (instr.operation as u32) << 21;
+
+    res
+}
+
 fn mips_encode_jtype(instr: &MipsJInstr) -> u32 {
     let mut res: u32 = (instr.opcode as u32) << 26;
     res |= instr.target;
@@ -118,11 +206,33 @@ pub fn mips_encode(instr: &MipsInstr) -> Option<u32> {
         MipsInstr::RType(r) => Some(mips_encode_rtype(r)),
         MipsInstr::IType(i) => Some(mips_encode_itype(i)),
         MipsInstr::JType(j) => Some(mips_encode_jtype(j)),
+        MipsInstr::Cop(c) => Some(mips_encode_cop(c)),
+        MipsInstr::CopMem(c) => Some(mips_encode_cop_mem(c)),
         MipsInstr::Invalid => None,
     }
 }
 
 pub fn mips_encode_str(istr: &str, d: u8, s: u8, t: u8, imm: u16, tgt: u32) -> Option<u32> {
+    if let Some((op, cop)) = MipsCopOperation::from_str(istr) {
+        return mips_encode(&MipsInstr::Cop(MipsCopInstr {
+            opcode: MipsOpcode::CoProc,
+            cop,
+            operation: op,
+            d_reg: d,
+            t_reg: t,
+        }));
+    }
+
+    if let Some((op, cop)) = MipsOpcode::cop_mem_from_str(istr) {
+        return mips_encode(&MipsInstr::CopMem(MipsCopMemInstr {
+            opcode: op,
+            cop,
+            base: s,
+            t_reg: t,
+            immediate: imm,
+        }));
+    }
+
     if let Some(op) = MipsOpcode::from_str(istr) {
         let instr = match op {
             MipsOpcode::J | MipsOpcode::Jal => MipsInstr::JType(MipsJInstr {
@@ -210,6 +320,26 @@ impl std::fmt::Display for MipsIInstr {
     }
 }
 
+impl std::fmt::Display for MipsCopInstr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{} ${}, ${}",
+            self.operation, self.cop, self.t_reg, self.d_reg
+        )
+    }
+}
+
+impl std::fmt::Display for MipsCopMemInstr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{} {}, {}({})",
+            self.opcode, self.cop, self.t_reg, self.immediate, self.base
+        )
+    }
+}
+
 impl std::fmt::Display for MipsJInstr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {:#x}", self.opcode, self.target << 2)
@@ -222,6 +352,8 @@ impl std::fmt::Display for MipsInstr {
             MipsInstr::RType(r) => r.fmt(f),
             MipsInstr::IType(i) => i.fmt(f),
             MipsInstr::JType(j) => j.fmt(f),
+            MipsInstr::Cop(c) => c.fmt(f),
+            MipsInstr::CopMem(c) => c.fmt(f),
             MipsInstr::Invalid => write!(f, "INVALID"),
         }
     }

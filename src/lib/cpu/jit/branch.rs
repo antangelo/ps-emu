@@ -37,7 +37,7 @@ impl<'ctx> TranslationBlock<'ctx> {
     }
 
     pub(super) fn emit_bgtz(&mut self, instr: &decode::MipsIInstr) {
-        let s_val = self.get_gpr_value(instr.s_reg, &format!("beq_{}", self.count_uniq));
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("bgtz_{}", self.count_uniq));
         let i32_type = self.ctx.i32_type();
         let zero = i32_type.const_zero();
         let cmp = self.builder.build_int_compare(
@@ -45,6 +45,28 @@ impl<'ctx> TranslationBlock<'ctx> {
             s_val,
             zero,
             &format!("bgtz_{}_cmp", self.count_uniq),
+        );
+
+        let count = self.count_uniq;
+        self.instr_finished_emitting();
+
+        self.delay_slot_arg = Some(DelaySlotArg {
+            count,
+            immed: instr.immediate,
+            value: cmp.into(),
+        });
+        self.delay_slot_hazard = Some(Self::branch_delay_slot_action);
+    }
+
+    pub(super) fn emit_blez(&mut self, instr: &decode::MipsIInstr) {
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("blez_{}", self.count_uniq));
+        let i32_type = self.ctx.i32_type();
+        let zero = i32_type.const_zero();
+        let cmp = self.builder.build_int_compare(
+            inkwell::IntPredicate::SLE,
+            s_val,
+            zero,
+            &format!("blez_{}_cmp", self.count_uniq),
         );
 
         let count = self.count_uniq;
@@ -156,6 +178,36 @@ mod test {
 
         th.push_instr("addiu", 0, 0, 1, 1, 0);
         th.push_instr("bne", 0, 1, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 8 + (target << 2) as u32);
+    }
+
+    #[test]
+    fn jit_test_blez_not_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("addiu", 0, 0, 1, 1, 0);
+        th.push_instr("blez", 0, 1, 0, target, 0);
+        th.push_instr("sll", 0, 0, 0, 0, 0);
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.pc, 0x1000 + 0xc);
+    }
+
+    #[test]
+    fn jit_test_blez_taken() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let target = 0x100;
+
+        th.push_instr("addiu", 0, 0, 1, -1 as i16 as u16, 0);
+        th.push_instr("blez", 0, 1, 0, target, 0);
         th.push_instr("sll", 0, 0, 0, 0, 0);
 
         th.execute(&mut state).unwrap();

@@ -34,6 +34,20 @@ pub enum MipsOpcode {
 }
 
 impl MipsOpcode {
+    pub(crate) fn cop_mem_from_str(s: &str) -> Option<(MipsOpcode, u8)> {
+        match s {
+            "lwc0" => Some((MipsOpcode::LCoProc, 0)),
+            "lwc1" => Some((MipsOpcode::LCoProc, 1)),
+            "lwc2" => Some((MipsOpcode::LCoProc, 2)),
+            "lwc3" => Some((MipsOpcode::LCoProc, 3)),
+            "swc0" => Some((MipsOpcode::SwCoProc, 0)),
+            "swc1" => Some((MipsOpcode::SwCoProc, 1)),
+            "swc2" => Some((MipsOpcode::SwCoProc, 2)),
+            "swc3" => Some((MipsOpcode::SwCoProc, 3)),
+            _ => None,
+        }
+    }
+
     pub(crate) fn from_str(s: &str) -> Option<Self> {
         match s {
             "j" => Some(MipsOpcode::J),
@@ -229,6 +243,49 @@ impl std::fmt::Display for MipsBranchSpecial {
             MipsBranchSpecial::Bltzal => write!(f, "bltzal"),
             MipsBranchSpecial::Bgezal => write!(f, "bgezal"),
             _ => write!(f, "INVALID"),
+        }
+    }
+}
+
+#[derive(Debug, FromPrimitive, Copy, Clone)]
+pub enum MipsCopOperation {
+    MoveFrom = 0x0,
+    ControlFrom = 0x2,
+    MoveTo = 0x4,
+    ControlTo = 0x6,
+}
+
+impl MipsCopOperation {
+    pub(crate) fn from_str(s: &str) -> Option<(Self, u8)> {
+        match s {
+            "mfc0" => Some((Self::MoveFrom, 0)),
+            "mfc1" => Some((Self::MoveFrom, 1)),
+            "mfc2" => Some((Self::MoveFrom, 2)),
+            "mfc3" => Some((Self::MoveFrom, 3)),
+            "cfc0" => Some((Self::ControlFrom, 0)),
+            "cfc1" => Some((Self::ControlFrom, 1)),
+            "cfc2" => Some((Self::ControlFrom, 2)),
+            "cfc3" => Some((Self::ControlFrom, 3)),
+            "mtc0" => Some((Self::MoveTo, 0)),
+            "mtc1" => Some((Self::MoveTo, 1)),
+            "mtc2" => Some((Self::MoveTo, 2)),
+            "mtc3" => Some((Self::MoveTo, 3)),
+            "ctc0" => Some((Self::ControlTo, 0)),
+            "ctc1" => Some((Self::ControlTo, 1)),
+            "ctc2" => Some((Self::ControlTo, 2)),
+            "ctc3" => Some((Self::ControlTo, 3)),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for MipsCopOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MipsCopOperation::MoveFrom => write!(f, "mfc"),
+            MipsCopOperation::ControlFrom => write!(f, "cfc"),
+            MipsCopOperation::MoveTo => write!(f, "mtc"),
+            MipsCopOperation::ControlTo => write!(f, "ctc"),
         }
     }
 }

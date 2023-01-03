@@ -141,7 +141,12 @@ impl<'ctx> TranslationBlock<'ctx> {
             .delay_slot_load_register
             .filter(|reg| *reg == instr.t_reg)
             .map_or_else(
-                || self.get_gpr_value(instr.t_reg, &format!("{}_{}_gpr_t", instr.opcode, self.count_uniq)),
+                || {
+                    self.get_gpr_value(
+                        instr.t_reg,
+                        &format!("{}_{}_gpr_t", instr.opcode, self.count_uniq),
+                    )
+                },
                 |_| {
                     self.builder
                         .build_load(
@@ -182,25 +187,26 @@ impl<'ctx> TranslationBlock<'ctx> {
             &format!("{}_{}_read", instr.opcode, count),
         );
 
-        let mem_read_val = self
-            .builder
-            .build_load(delay_val_ptr, &format!("{}_{}_mem_read", instr.opcode, self.count_uniq));
+        let mem_read_val = self.builder.build_load(
+            delay_val_ptr,
+            &format!("{}_{}_mem_read", instr.opcode, count),
+        );
 
         let alignment_bytes = self.builder.build_and(
             addr,
             i32_type.const_int(0x0000_0003, false),
-            &format!("{}_{}_alignment_bytes", instr.opcode, self.count_uniq),
+            &format!("{}_{}_alignment_bytes", instr.opcode, count),
         );
         let alignment = self.builder.build_int_mul(
             alignment_bytes,
             i32_type.const_int(8, false),
-            &format!("{}_{}_alignment", instr.opcode, self.count_uniq),
+            &format!("{}_{}_alignment", instr.opcode, count),
         );
 
         let inv_alignment = self.builder.build_int_sub(
             i32_type.const_int(24, false),
             alignment,
-            &format!("{}_{}_mem_read_shift_bytes", instr.opcode, self.count_uniq),
+            &format!("{}_{}_mem_read_shift_bytes", instr.opcode, count),
         );
 
         let mem_shift: inkwell::values::IntValue;
@@ -209,40 +215,40 @@ impl<'ctx> TranslationBlock<'ctx> {
             mem_shift = self.builder.build_left_shift(
                 mem_read_val.into_int_value(),
                 inv_alignment,
-                &format!("{}_{}_mem_shift", instr.opcode, self.count_uniq),
-                );
+                &format!("{}_{}_mem_shift", instr.opcode, count),
+            );
 
             curr_val_mask = self.builder.build_right_shift(
                 i32_type.const_int(0x00ff_ffff, false),
                 alignment,
                 false,
-                &format!("{}_{}_curr_mask", instr.opcode, self.count_uniq),
-                );
+                &format!("{}_{}_curr_mask", instr.opcode, count),
+            );
         } else {
             mem_shift = self.builder.build_right_shift(
                 mem_read_val.into_int_value(),
                 alignment,
                 false,
-                &format!("{}_{}_mem_shift", instr.opcode, self.count_uniq),
-                );
-            
+                &format!("{}_{}_mem_shift", instr.opcode, count),
+            );
+
             curr_val_mask = self.builder.build_left_shift(
                 i32_type.const_int(0xffff_ff00, false),
                 inv_alignment,
-                &format!("{}_{}_curr_mask", instr.opcode, self.count_uniq),
-                );
+                &format!("{}_{}_curr_mask", instr.opcode, count),
+            );
         }
 
         let curr_val = self.builder.build_and(
             source_val,
             curr_val_mask,
-            &format!("{}_{}_source_masked", instr.opcode, self.count_uniq),
+            &format!("{}_{}_source_masked", instr.opcode, count),
         );
 
         let new_val = self.builder.build_or(
             curr_val,
             mem_shift,
-            &format!("{}_{}_final_value", instr.opcode, self.count_uniq),
+            &format!("{}_{}_final_value", instr.opcode, count),
         );
 
         // Update the delay value to the adjusted read value
@@ -263,6 +269,126 @@ impl<'ctx> TranslationBlock<'ctx> {
 
     pub(super) fn emit_lwr(&mut self, instr: &decode::MipsIInstr) {
         self.emit_unaligned_load(instr, false);
+    }
+
+    fn emit_unaligned_store(&mut self, instr: &decode::MipsIInstr, left: bool) {
+        if self.finalized {
+            self.instr_finished_emitting();
+            return;
+        }
+
+        let i32_type = self.ctx.i32_type();
+        let i8_type = self.ctx.i8_type();
+        let bool_type = self.ctx.bool_type();
+
+        let source_val = self.get_gpr_value(
+            instr.t_reg,
+            &format!("{}_{}_source_val", instr.opcode, self.count_uniq),
+        );
+
+        let addr = self.decode_vaddr(instr);
+        let addr_aligned = self.builder.build_and(
+            addr,
+            i32_type.const_int(0xffff_fffc, false),
+            &format!("{}_{}_align", instr.opcode, self.count_uniq),
+        );
+
+        // Clear out any delays that may be pending, we will be overwriting the load delay value
+        // register
+        let count = self.count_uniq;
+        self.instr_finished_emitting();
+
+        // FIXME: Check memory access success
+        // Read into zero register to discard write
+        let _read_success = self.mem_read(
+            addr_aligned.into(),
+            i32_type.const_int(32, false).into(),
+            i8_type.const_zero().into(),
+            bool_type.const_zero().into(),
+            &format!("{}_{}_read", instr.opcode, count),
+        );
+
+        let delay_val_ptr =
+            self.gep_load_delay_value(&format!("{}_{}_mem_read_ptr", instr.opcode, count));
+        let mem_read_val = self.builder.build_load(
+            delay_val_ptr,
+            &format!("{}_{}_mem_read", instr.opcode, count),
+        );
+
+        let alignment_bytes = self.builder.build_and(
+            addr,
+            i32_type.const_int(0x0000_0003, false),
+            &format!("{}_{}_alignment_bytes", instr.opcode, count),
+        );
+        let alignment = self.builder.build_int_mul(
+            alignment_bytes,
+            i32_type.const_int(8, false),
+            &format!("{}_{}_alignment", instr.opcode, count),
+        );
+
+        let inv_alignment = self.builder.build_int_sub(
+            i32_type.const_int(24, false),
+            alignment,
+            &format!("{}_{}_mem_read_shift_bytes", instr.opcode, count),
+        );
+
+        let mem_shift: inkwell::values::IntValue;
+        let curr_val_mask: inkwell::values::IntValue;
+        if left {
+            mem_shift = self.builder.build_right_shift(
+                mem_read_val.into_int_value(),
+                inv_alignment,
+                false,
+                &format!("{}_{}_mem_shift", instr.opcode, count),
+            );
+
+            curr_val_mask = self.builder.build_left_shift(
+                i32_type.const_int(0xffff_ff00, false),
+                alignment,
+                &format!("{}_{}_curr_mask", instr.opcode, count),
+            );
+        } else {
+            mem_shift = self.builder.build_left_shift(
+                mem_read_val.into_int_value(),
+                alignment,
+                &format!("{}_{}_mem_shift", instr.opcode, count),
+            );
+
+            curr_val_mask = self.builder.build_right_shift(
+                i32_type.const_int(0x00ff_ffff, false),
+                inv_alignment,
+                false,
+                &format!("{}_{}_curr_mask", instr.opcode, count),
+            );
+        }
+
+        let curr_val = self.builder.build_and(
+            source_val,
+            curr_val_mask,
+            &format!("{}_{}_source_masked", instr.opcode, count),
+        );
+
+        let new_val = self.builder.build_or(
+            curr_val,
+            mem_shift,
+            &format!("{}_{}_final_value", instr.opcode, count),
+        );
+
+        // FIXME: Check write success
+        let _mem_write_success = self.mem_write(
+            addr_aligned.into(),
+            i32_type.const_int(32, false).into(),
+            new_val.into(),
+            &format!("{}_{}_mem_write", instr.opcode, count),
+        );
+    }
+
+    pub(super) fn emit_swl(&mut self, instr: &decode::MipsIInstr) {
+        self.emit_unaligned_store(instr, true);
+    }
+
+    pub(super) fn emit_swr(&mut self, instr: &decode::MipsIInstr) {
+        self.emit_unaligned_store(instr, false);
     }
 }
 

@@ -12,6 +12,7 @@ mod jump;
 mod mem;
 mod mult;
 mod rtype;
+mod cop;
 
 type BusType = crate::cpu::bus_vec::VecBus;
 type TbDynFunc<'ctx> =
@@ -63,7 +64,7 @@ fn new_tb<'ctx>(
     let i32_type = ctx.i32_type();
     let i8_type = ctx.i8_type();
     let mips_state_type = ctx.opaque_struct_type("mips_state");
-    mips_state_type.set_body(&[i32_type.into(); 36], false);
+    mips_state_type.set_body(&[i32_type.into(); 52], false);
 
     let bus_type = ctx
         .opaque_struct_type("mips_bus")
@@ -412,7 +413,9 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsFunction::And => self.emit_and(instr),
             opcode::MipsFunction::Sltu => self.emit_sltu(instr),
             opcode::MipsFunction::Slt => self.emit_slt(instr),
-            _ => panic!("Not implemented: {}", instr.function),
+            opcode::MipsFunction::Brk | opcode::MipsFunction::Syscall => {
+                panic!("Not implemented: {}", instr.function)
+            }
         }
     }
 
@@ -426,16 +429,24 @@ impl<'ctx> TranslationBlock<'ctx> {
 
     fn emit_i_instr(&mut self, instr: &decode::MipsIInstr) {
         match instr.opcode {
+            opcode::MipsOpcode::RegisterOp => panic!("RType instruction decoded as IType"),
             opcode::MipsOpcode::RegisterImm => self.emit_special_branch(instr),
+            opcode::MipsOpcode::J | opcode::MipsOpcode::Jal => {
+                panic!("JType instruction decoded as IType")
+            }
             opcode::MipsOpcode::Beq => self.emit_beq(instr),
             opcode::MipsOpcode::Bne => self.emit_bne(instr),
+            opcode::MipsOpcode::Blez => self.emit_blez(instr),
             opcode::MipsOpcode::Bgtz => self.emit_bgtz(instr),
             opcode::MipsOpcode::AddI => self.emit_addiu(instr), // FIXME: Handle addi overflow
             opcode::MipsOpcode::AddIU => self.emit_addiu(instr),
             opcode::MipsOpcode::SltI => self.emit_slti(instr),
             opcode::MipsOpcode::SltIU => self.emit_sltiu(instr),
+            opcode::MipsOpcode::AndI => self.emit_andi(instr),
             opcode::MipsOpcode::OrI => self.emit_ori(instr),
+            opcode::MipsOpcode::XorI => self.emit_xori(instr),
             opcode::MipsOpcode::Lui => self.emit_lui(instr),
+            opcode::MipsOpcode::CoProc => panic!("COP instruction decoded as IType"),
             opcode::MipsOpcode::Lb => self.emit_lb(instr),
             opcode::MipsOpcode::Lh => self.emit_lh(instr),
             opcode::MipsOpcode::Lwl => self.emit_lwl(instr),
@@ -445,8 +456,11 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsOpcode::Lwr => self.emit_lwr(instr),
             opcode::MipsOpcode::Sb => self.emit_sb(instr),
             opcode::MipsOpcode::Sh => self.emit_sh(instr),
+            opcode::MipsOpcode::Swl => self.emit_swl(instr),
             opcode::MipsOpcode::Sw => self.emit_sw(instr),
-            _ => panic!("Not implemented: {}", instr.opcode),
+            opcode::MipsOpcode::Swr => self.emit_swr(instr),
+            opcode::MipsOpcode::LCoProc => panic!("COP load decoded as IType"),
+            opcode::MipsOpcode::SwCoProc => panic!("COP store decoded as IType"),
         }
     }
 
@@ -472,6 +486,7 @@ impl<'ctx> TranslationBlock<'ctx> {
                     decode::MipsInstr::RType(r) => self.emit_r_instr(&r),
                     decode::MipsInstr::IType(i) => self.emit_i_instr(&i),
                     decode::MipsInstr::JType(j) => self.emit_j_instr(&j),
+                    decode::MipsInstr::Cop(c) => self.emit_cop_operation(&c),
                     _ => {
                         // FIXME: Raise invalid instruction exception
                         self.emit_r_instr(&decode::MipsRInstr {
@@ -481,6 +496,10 @@ impl<'ctx> TranslationBlock<'ctx> {
                             shamt: 0,
                             function: opcode::MipsFunction::Sll,
                         });
+                        eprintln!("Ignorning unhandled instruction {:#08x}: {:#08x} {}", addr, instr_raw, instr);
+
+                        #[cfg(test)]
+                        panic!();
                         //return Err(format!("Invalid instruction {:#08x}: {:#08x} {}", addr, instr_raw, instr));
                     }
                 }

@@ -25,6 +25,28 @@ impl<'ctx> TranslationBlock<'ctx> {
         self.instr_finished_emitting();
     }
 
+    pub(super) fn emit_andi(&mut self, instr: &decode::MipsIInstr) {
+        if self.finalized || instr.t_reg == 0 {
+            self.instr_finished_emitting();
+            return;
+        }
+
+        let i32_type = self.ctx.i32_type();
+
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("andi_{}", self.count_uniq));
+        let immed = i32_type.const_int(instr.immediate as u64, true);
+
+        let t_reg = self.gep_gp_register(instr.t_reg, &format!("andi_{}_t_reg", self.count_uniq));
+
+        let and_val =
+            self.builder
+                .build_and(s_val, immed, &format!("andi_{}_res", self.count_uniq));
+
+        self.builder.build_store(t_reg, and_val);
+
+        self.instr_finished_emitting();
+    }
+
     pub(super) fn emit_ori(&mut self, instr: &decode::MipsIInstr) {
         if self.finalized || instr.t_reg == 0 {
             self.instr_finished_emitting();
@@ -43,6 +65,28 @@ impl<'ctx> TranslationBlock<'ctx> {
             .build_or(s_val, immed, &format!("ori_{}_res", self.count_uniq));
 
         self.builder.build_store(t_reg, or_val);
+
+        self.instr_finished_emitting();
+    }
+
+    pub(super) fn emit_xori(&mut self, instr: &decode::MipsIInstr) {
+        if self.finalized || instr.t_reg == 0 {
+            self.instr_finished_emitting();
+            return;
+        }
+
+        let i32_type = self.ctx.i32_type();
+
+        let s_val = self.get_gpr_value(instr.s_reg, &format!("xori_{}", self.count_uniq));
+        let immed = i32_type.const_int(instr.immediate as u64, true);
+
+        let t_reg = self.gep_gp_register(instr.t_reg, &format!("xori_{}_t_reg", self.count_uniq));
+
+        let xor_val =
+            self.builder
+                .build_xor(s_val, immed, &format!("xori_{}_res", self.count_uniq));
+
+        self.builder.build_store(t_reg, xor_val);
 
         self.instr_finished_emitting();
     }
@@ -139,6 +183,21 @@ mod test {
     }
 
     #[test]
+    fn jit_test_andi() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let val: u32 = 42;
+
+        th.push_instr("ori", 0, 0, 1, val as u16, 0);
+        th.push_instr("andi", 0, 1, 1, 0xf, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], val & 0xf);
+    }
+
+    #[test]
     fn jit_test_ori() {
         let mut th = TestHarness::default();
         let mut state = crate::cpu::jit::CpuState::default();
@@ -150,6 +209,21 @@ mod test {
         th.execute(&mut state).unwrap();
 
         assert_eq!(state.gpr[0], val);
+    }
+
+    #[test]
+    fn jit_test_xori() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+        let val: u32 = 42;
+
+        th.push_instr("ori", 0, 0, 1, val as u16, 0);
+        th.push_instr("xori", 0, 1, 1, val as u16, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[0], 0);
     }
 
     #[test]

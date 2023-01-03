@@ -10,6 +10,14 @@ pub mod trie;
 #[cfg(test)]
 pub mod test;
 
+/*
+pub(super) const COP0_REG_BAD_VADDR: usize = 8;
+pub(super) const COP0_REG_SR: usize = 12;
+pub(super) const COP0_REG_CAUSE: usize = 13;
+pub(super) const COP0_REG_EPC: usize = 14;
+pub(super) const COP0_REG_PRID: usize = 15;
+*/
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct CpuState {
@@ -22,6 +30,8 @@ pub struct CpuState {
     // and it's unlikely to save space thanks to padding anyway
     pub(super) load_delay_register: u32,
     pub(super) load_delay_register_value: u32,
+
+    pub(super) cop0_reg: [u32; 16],
 }
 
 impl CpuState {
@@ -55,6 +65,7 @@ impl Default for CpuState {
             pc: 0,
             load_delay_register: 0,
             load_delay_register_value: 0,
+            cop0_reg: [0; 16],
         }
     }
 }
