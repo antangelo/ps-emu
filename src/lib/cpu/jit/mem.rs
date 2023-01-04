@@ -625,6 +625,33 @@ mod test {
     }
 
     #[test]
+    fn jit_test_lwr_lwl_2() {
+        let mut th = TestHarness::default();
+        let mut state = crate::cpu::jit::CpuState::default();
+
+        let addr = 0x1400;
+        let delay_val = 10;
+
+        th.load32(10, 0x11223344);
+        th.load32(11, 0x55667788);
+        th.load32(3, delay_val);
+
+        th.push_instr("addiu", 0, 0, 1, addr, 0);
+        th.push_instr("sw", 0, 1, 10, 0, 0);
+        th.push_instr("sw", 0, 1, 11, 4, 0);
+
+        th.push_instr("lwl", 0, 1, 3, 4, 0);
+        th.push_instr("lwr", 0, 1, 3, 1, 0);
+        th.push_instr("addu", 4, 3, 0, 0, 0);
+        th.finish();
+
+        th.execute(&mut state).unwrap();
+
+        assert_eq!(state.gpr[3], delay_val);
+        assert_eq!(state.gpr[2], 0x88112233);
+    }
+
+    #[test]
     fn jit_test_swr_swl() {
         let mut th = TestHarness::default();
         let mut state = crate::cpu::jit::CpuState::default();

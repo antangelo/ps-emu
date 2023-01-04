@@ -591,6 +591,7 @@ pub(crate) unsafe extern "C" fn tb_mem_read(
             true
         }
         Err(e) => {
+            // FIXME: Return error for handling
             panic!("tb_mem_read err: {:#08x?}", e);
         }
     }
@@ -607,6 +608,7 @@ pub(crate) unsafe extern "C" fn tb_mem_write(
     let wv = (*bus).write(addr, size, value);
     (*mgr).invalidate(addr);
     if let Err(e) = wv {
+        // FIXME: Return error for handling
         panic!("tb_mem_write err: {:#08x?}", e);
     }
     match wv {
