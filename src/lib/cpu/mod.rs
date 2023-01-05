@@ -10,13 +10,33 @@ pub mod trie;
 #[cfg(test)]
 pub mod test;
 
-/*
-pub(super) const COP0_REG_BAD_VADDR: usize = 8;
-pub(super) const COP0_REG_SR: usize = 12;
-pub(super) const COP0_REG_CAUSE: usize = 13;
-pub(super) const COP0_REG_EPC: usize = 14;
-pub(super) const COP0_REG_PRID: usize = 15;
-*/
+pub mod cop0 {
+    pub enum Register {
+        BadVaddr = 8,
+        Sr = 12,
+        Cause = 13,
+        Epc = 14,
+        Prid = 15,
+    }
+
+    #[repr(u8)]
+    pub enum ExceptionCause {
+        Interrupt = 0x0,
+        AddressErrOnLoad = 0x4,
+        AddressErrOnStore = 0x5,
+        Syscall = 0x8,
+        Break = 0x9,
+        ReservedInstruction = 0x10,
+        CopUnusable(u8) = 0x11,
+        Overflow = 0x12,
+    }
+
+    impl ExceptionCause {
+        pub fn to_int(&self) -> u8 {
+            unsafe { *(self as *const Self as *const u8) }
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Debug)]

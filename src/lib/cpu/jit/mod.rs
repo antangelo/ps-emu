@@ -395,6 +395,8 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsFunction::Slrv => self.emit_slrv(instr),
             opcode::MipsFunction::Jr => self.emit_jr(instr),
             opcode::MipsFunction::Jalr => self.emit_jalr(instr),
+            opcode::MipsFunction::Syscall => self.emit_syscall(instr),
+            opcode::MipsFunction::Brk => self.emit_break(instr),
             opcode::MipsFunction::Mfhi => self.emit_mfhi(instr),
             opcode::MipsFunction::Mthi => self.emit_mthi(instr),
             opcode::MipsFunction::Mflo => self.emit_mflo(instr),
@@ -413,9 +415,6 @@ impl<'ctx> TranslationBlock<'ctx> {
             opcode::MipsFunction::And => self.emit_and(instr),
             opcode::MipsFunction::Sltu => self.emit_sltu(instr),
             opcode::MipsFunction::Slt => self.emit_slt(instr),
-            opcode::MipsFunction::Brk | opcode::MipsFunction::Syscall => {
-                panic!("Not implemented: {}", instr.function)
-            }
         }
     }
 
@@ -533,6 +532,10 @@ impl<'ctx> TranslationBlock<'ctx> {
         unsafe { self.tb_func = self.ee.get_function(&format!("tb_func_{}", self.id)).ok() }
     }
 
+    pub fn print(&self) {
+        self.func.print_to_stderr();
+    }
+
     pub(crate) fn execute(
         &self,
         state: &mut CpuState,
@@ -634,6 +637,9 @@ pub fn execute(bus: &mut BusType, state: &mut CpuState) -> Result<(), String> {
     let timing_scale = 1_000;
 
     loop {
+        // FIXME: Raise alignment exception instead of throwing
+        assert!((state.pc & 0x3) == 0);
+
         let tb = tb_mgr.get_tb(&ctx, state.pc, bus)?;
 
         if state.pc == prev_pc && tb.count_uniq == 2 {

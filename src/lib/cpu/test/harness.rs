@@ -52,12 +52,32 @@ impl TestHarness {
         self.push_instr("ori", 0, reg, reg, (imm & 0xffff) as u16, 0);
     }
 
+    pub(crate) fn current_pc_head(&self) -> u32 {
+        self.addr + self.icount * 4
+    }
+
     pub(crate) fn execute(&mut self, state: &mut CpuState) -> Result<(), String> {
         let ctx = inkwell::context::Context::create();
         let mut tb_mgr = crate::cpu::jit::TbManager::new();
 
         state.set_pc(self.addr);
         let tb = tb_mgr.get_tb(&ctx, self.addr, &mut self.bus)?;
+        tb.execute(state, &mut self.bus, &mut tb_mgr)?;
+
+        self.addr = state.pc;
+
+        Ok(())
+    }
+
+    // Debug version of execute, that prints the generated TB IR to stderr
+    #[allow(dead_code)]
+    pub(crate) fn execute_dbg(&mut self, state: &mut CpuState) -> Result<(), String> {
+        let ctx = inkwell::context::Context::create();
+        let mut tb_mgr = crate::cpu::jit::TbManager::new();
+
+        state.set_pc(self.addr);
+        let tb = tb_mgr.get_tb(&ctx, self.addr, &mut self.bus)?;
+        tb.print();
         tb.execute(state, &mut self.bus, &mut tb_mgr)?;
 
         self.addr = state.pc;

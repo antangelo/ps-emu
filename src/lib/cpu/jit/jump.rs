@@ -1,7 +1,16 @@
+use super::DelaySlotArg;
 use super::decode;
 use super::TranslationBlock;
 
 impl<'ctx> TranslationBlock<'ctx> {
+    fn jump_delay_slot_action<'a, 'b>(tb: &'a mut TranslationBlock<'b>) {
+        let arg = tb.delay_slot_arg.as_ref().unwrap();
+
+        let pc = tb.gep_pc(&format!("j_{}_ds_pc_gep", arg.count));
+        tb.builder.build_store(pc, arg.value);
+        tb.finalized = true;
+    }
+
     pub(super) fn emit_j(&mut self, instr: &decode::MipsJInstr) {
         if self.finalized {
             return;
@@ -9,30 +18,32 @@ impl<'ctx> TranslationBlock<'ctx> {
 
         let i32_type = self.ctx.i32_type();
 
-        let pc = self.gep_pc(&format!("j_pc_gep_{}", self.count_uniq));
+        let pc = self.gep_pc(&format!("j_{}_pc_gep", self.count_uniq));
         let pc_val = self
             .builder
-            .build_load(pc, &format!("j_pc_{}", self.count_uniq));
+            .build_load(pc, &format!("j_{}_pc", self.count_uniq));
         let pc_mask = self.builder.build_and(
             pc_val.into_int_value(),
             i32_type.const_int(0xe000_0000, false).into(),
-            &format!("j_pc_mask_{}", self.count_uniq),
+            &format!("j_{}_pc_mask", self.count_uniq),
         );
 
         let target_addr = i32_type.const_int((instr.target << 2) as u64, false);
         let target_v = self.builder.build_or(
             target_addr,
             pc_mask,
-            &format!("j_target_{}", self.count_uniq),
+            &format!("j_{}_target", self.count_uniq),
         );
 
-        self.builder.build_store(pc, target_v);
-
+        let count = self.count_uniq;
         self.instr_finished_emitting();
 
-        self.delay_slot_hazard = Some(|tb| {
-            tb.finalized = true;
+        self.delay_slot_arg = Some(DelaySlotArg {
+            count,
+            immed: 0,
+            value: target_v.into(),
         });
+        self.delay_slot_hazard = Some(Self::jump_delay_slot_action);
     }
 
     pub(super) fn emit_jal(&mut self, instr: &decode::MipsJInstr) {
@@ -56,68 +67,70 @@ impl<'ctx> TranslationBlock<'ctx> {
         let pc_mask = self.builder.build_and(
             pc_val.into_int_value(),
             i32_type.const_int(0xe000_0000, false).into(),
-            &format!("j_pc_mask_{}", self.count_uniq),
+            &format!("jal_{}_pc_mask", self.count_uniq),
         );
         let target_v = self.builder.build_or(
             target_addr,
             pc_mask,
-            &format!("j_target_{}", self.count_uniq),
+            &format!("jal_{}_target", self.count_uniq),
         );
 
         self.builder.build_store(ra, ra_val);
-        self.builder.build_store(pc, target_v);
 
+        let count = self.count_uniq;
         self.instr_finished_emitting();
 
-        self.delay_slot_hazard = Some(|tb| {
-            tb.finalized = true;
+        self.delay_slot_arg = Some(DelaySlotArg {
+            count,
+            immed: 0,
+            value: target_v.into(),
         });
+        self.delay_slot_hazard = Some(Self::jump_delay_slot_action);
     }
 
     pub(super) fn emit_jr(&mut self, instr: &decode::MipsRInstr) {
         let target_v = self.get_gpr_value(instr.s_reg, &format!("jr_{}", self.count_uniq));
 
-        let pc = self.gep_pc(&format!("jr_{}", self.count_uniq));
-
-        // FIXME: Handle address exception if lower bits of ra are nonzero
-
-        self.builder.build_store(pc, target_v);
-
+        let count = self.count_uniq;
         self.instr_finished_emitting();
 
-        self.delay_slot_hazard = Some(|tb| {
-            tb.finalized = true;
+        self.delay_slot_arg = Some(DelaySlotArg {
+            count,
+            immed: 0,
+            value: target_v.into(),
         });
+        self.delay_slot_hazard = Some(Self::jump_delay_slot_action);
     }
 
     pub(super) fn emit_jalr(&mut self, instr: &decode::MipsRInstr) {
         let i32_type = self.ctx.i32_type();
         let target_v = self.get_gpr_value(instr.s_reg, &format!("jalr_{}", self.count_uniq));
 
-        let pc = self.gep_pc(&format!("jal_{}", self.count_uniq));
+        let pc = self.gep_pc(&format!("jalr_{}", self.count_uniq));
         let ra = self.gep_gp_register(instr.d_reg, &format!("jalr_{}_d_ra", self.count_uniq));
 
         let pc_incr = i32_type.const_int(self.count_uniq * 4 + 8, false);
 
         let pc_val = self
             .builder
-            .build_load(pc, &format!("jal_{}_pc_val", self.count_uniq));
+            .build_load(pc, &format!("jalr_{}_pc_val", self.count_uniq));
         let ra_val = self.builder.build_int_add(
             pc_val.into_int_value(),
             pc_incr,
-            &format!("jal_{}_ra_val", self.count_uniq),
+            &format!("jalr_{}_ra_val", self.count_uniq),
         );
 
-        // FIXME: Handle address exception if lower bits of ra are nonzero
-
         self.builder.build_store(ra, ra_val);
-        self.builder.build_store(pc, target_v);
 
+        let count = self.count_uniq;
         self.instr_finished_emitting();
 
-        self.delay_slot_hazard = Some(|tb| {
-            tb.finalized = true;
+        self.delay_slot_arg = Some(DelaySlotArg {
+            count,
+            immed: 0,
+            value: target_v.into(),
         });
+        self.delay_slot_hazard = Some(Self::jump_delay_slot_action);
     }
 }
 
