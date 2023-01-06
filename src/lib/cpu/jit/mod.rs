@@ -7,12 +7,12 @@ use std::rc::Rc;
 pub use super::test::harness;
 
 mod branch;
+mod cop;
 mod immed;
 mod jump;
 mod mem;
 mod mult;
 mod rtype;
-mod cop;
 
 type BusType = crate::cpu::bus_vec::VecBus;
 type TbDynFunc<'ctx> =
@@ -275,20 +275,15 @@ impl<'ctx> TranslationBlock<'ctx> {
             )
             .into_int_value();
 
-        // This causes LLVM to segfault for some reason?
-        /*
-        let reg_ptr = unsafe {
-            self.builder.build_in_bounds_gep(
-                self.state_arg,
-                &[i32_type.const_zero(), reg_adjusted],
-                "ld_delay_reg_ptr",
-            )
-        };
-        */
-
+        // Pointer math to select the register specified by the delay slot
+        // GEP only works on constant indicies, so we have to do this manually
         let reg_ptr_offset = self
             .builder
-            .build_int_mul(reg_adjusted, i64_type.const_int(4, true), "fsfsds")
+            .build_int_mul(
+                reg_adjusted,
+                i64_type.const_int(4, true),
+                "ld_state_reg_ptr_offset",
+            )
             .const_z_ext(i64_type);
         let state_int = self
             .builder
@@ -495,7 +490,10 @@ impl<'ctx> TranslationBlock<'ctx> {
                             shamt: 0,
                             function: opcode::MipsFunction::Sll,
                         });
-                        eprintln!("Ignorning unhandled instruction {:#08x}: {:#08x} {}", addr, instr_raw, instr);
+                        eprintln!(
+                            "Ignorning unhandled instruction {:#08x}: {:#08x} {}",
+                            addr, instr_raw, instr
+                        );
 
                         #[cfg(test)]
                         panic!();

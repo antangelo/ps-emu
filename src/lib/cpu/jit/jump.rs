@@ -1,5 +1,5 @@
-use super::DelaySlotArg;
 use super::decode;
+use super::DelaySlotArg;
 use super::TranslationBlock;
 
 impl<'ctx> TranslationBlock<'ctx> {
